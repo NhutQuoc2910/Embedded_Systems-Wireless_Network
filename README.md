@@ -1,2 +1,2 @@
-# Basic_Programming_Network
-Đồ án lập trình mạng căn bản
+# Embedded_Systems_Wireless_Network
+Đồ án Hệ thống nhúng Mạng không dây
