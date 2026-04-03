@@ -26,6 +26,7 @@ KERNEL_INC=$(KERNEL_DIR)/include
 # Compiler and options:
 # ##### for RCP use: big-endian
 CC=gcc
+CFLAGS += -fgnu89-inline
 LD=ld
 ARM_CC=arm-linux-gcc
 ARM_CCFLAGS=-mbig-endian
