@@ -80,7 +80,7 @@ sequenceDiagram
     Destination->>Intermediate: RREP (Unicast)
     Intermediate->>Source: RREP (Forwarded)
     Note left of Source: Thiết lập đường đi tới Destination
-    Source->>Destination: Gửi Dữ liệu (Dữ liệu bắt đầu chảy)
+    Source->>Destination: Gửi Dữ liệu (Dữ liệu bắt đầu đi)
 ```
 
 ---
