@@ -14,11 +14,11 @@ sudo apt install -y build-essential gcc make bison flex
 # Bước này cực kỳ quan trọng để Quốc không bị lỗi 'undefined reference'
 echo "[2/4] Đang tự động sửa lỗi NS_INLINE trong các file header..."
 
-# Sửa trong aodv_hello.h
-sed -i 's/NS_INLINE void hello_update_timeout/void hello_update_timeout/g' aodv_hello.h
+# Sửa trong src/protocol/aodv_hello.h
+sed -i 's/NS_INLINE void hello_update_timeout/void hello_update_timeout/g' src/protocol/aodv_hello.h
 
-# Sửa trong routing_table.h
-sed -i 's/static inline rt_table_t \*rt_table_update_timeout/rt_table_t \*rt_table_update_timeout/g' routing_table.h
+# Sửa trong src/routing/routing_table.h
+sed -i 's/static inline rt_table_t \*rt_table_update_timeout/rt_table_t \*rt_table_update_timeout/g' src/routing/routing_table.h
 
 # 3. Sửa lỗi CFLAGS trong Makefile để tương thích GCC mới 
 echo "[3/4] Cấu hình Makefile để chạy chuẩn gnu89..."

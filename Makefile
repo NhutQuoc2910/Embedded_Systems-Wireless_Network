@@ -2,13 +2,19 @@
 AODVDIR=$(shell pwd)
 NS_DIR=ns-2
 
-SRC =	main.c list.c debug.c timer_queue.c aodv_socket.c aodv_hello.c \
-	aodv_neighbor.c aodv_timeout.c routing_table.c seek_list.c \
-	aodv_rreq.c aodv_rrep.c aodv_rerr.c nl.c
+SRC =	src/core/main.c src/utils/list.c src/utils/debug.c src/utils/timer_queue.c \
+	src/network/aodv_socket.c src/protocol/aodv_hello.c \
+	src/protocol/aodv_neighbor.c src/protocol/aodv_timeout.c \
+	src/routing/routing_table.c src/routing/seek_list.c \
+	src/protocol/aodv_rreq.c src/protocol/aodv_rrep.c \
+	src/protocol/aodv_rerr.c src/network/nl.c
 
-SRC_NS = 	debug.c list.c timer_queue.c aodv_socket.c aodv_hello.c \
-		aodv_neighbor.c aodv_timeout.c routing_table.c seek_list.c \
-		aodv_rreq.c aodv_rrep.c aodv_rerr.c
+SRC_NS = src/utils/debug.c src/utils/list.c src/utils/timer_queue.c \
+		src/network/aodv_socket.c src/protocol/aodv_hello.c \
+		src/protocol/aodv_neighbor.c src/protocol/aodv_timeout.c \
+		src/routing/routing_table.c src/routing/seek_list.c \
+		src/protocol/aodv_rreq.c src/protocol/aodv_rrep.c \
+		src/protocol/aodv_rerr.c
 
 SRC_NS_CPP =	$(NS_DIR)/aodv-uu.cc $(NS_DIR)/packet_queue.cc $(NS_DIR)/packet_input.cc
 
@@ -44,15 +50,17 @@ DEBUG=-g -DDEBUG
 # Add extra functionality. Uncomment or use "make XDEFS=-D<feature>" on 
 # the command line.
 XDEFS=-DDEBUG
-DEFS=-DCONFIG_GATEWAY #-DLLFEEDBACK
-CFLAGS=$(OPTS) $(DEBUG) $(DEFS) $(XDEFS)
+# Extra Include Paths
+INC=-Isrc/core -Isrc/protocol -Isrc/network -Isrc/routing -Isrc/utils
+
+CFLAGS=$(OPTS) $(DEBUG) $(DEFS) $(XDEFS) $(INC)
 LD_OPTS=
 
 ifneq (,$(findstring CONFIG_GATEWAY,$(DEFS)))
-SRC:=$(SRC) locality.c
+SRC:=$(SRC) src/routing/locality.c
 endif
 ifneq (,$(findstring LLFEEDBACK,$(DEFS)))
-SRC:=$(SRC) llf.c
+SRC:=$(SRC) src/network/llf.c
 LD_OPTS:=$(LD_OPTS) -liw
 endif
 
@@ -68,11 +76,11 @@ NS_DEFS= # DON'T CHANGE (overridden by NS Makefile)
 EXTRA_NS_DEFS=-DCONFIG_GATEWAY
 
 ifneq (,$(findstring CONFIG_GATEWAY,$(EXTRA_NS_DEFS)))
-SRC_NS:=$(SRC_NS) locality.c
+SRC_NS:=$(SRC_NS) src/routing/locality.c
 endif
 
 # Note: OPTS is overridden by NS Makefile
-NS_CFLAGS=$(OPTS) $(CPP_OPTS) $(DEBUG) $(NS_DEFS) $(EXTRA_NS_DEFS)
+NS_CFLAGS=$(OPTS) $(CPP_OPTS) $(DEBUG) $(NS_DEFS) $(EXTRA_NS_DEFS) $(INC)
 
 NS_INC= # DON'T CHANGE (overridden by NS Makefile)
 
@@ -91,7 +99,7 @@ arm: aodvd-arm kaodv-arm
 mips: aodvd-mips kaodv-mips
 
 endian.h:
-	$(CC) $(CFLAGS) -o endian endian.c
+	$(CC) $(CFLAGS) -o endian src/core/endian.c
 	./endian > endian.h
 
 $(OBJS): %.o: %.c Makefile
@@ -123,29 +131,28 @@ $(NS_TARGET): $(OBJS_NS_CPP) $(OBJS_NS) endian.h
 
 # Kernel module:
 kaodv: 
-	$(MAKE) -C $(AODVDIR)/lnx KERNEL_DIR=$(KERNEL_DIR) KCC=$(CC) XDEFS=$(XDEFS)
+	$(MAKE) -C $(AODVDIR)/kernel KERNEL_DIR=$(KERNEL_DIR) KCC=$(CC) XDEFS=$(XDEFS)
 
 kaodv-arm: 
-	$(MAKE) -C $(AODVDIR)/lnx KERNEL_DIR=$(KERNEL_DIR) KCC=$(ARM_CC) LD=$(ARM_LD) XDEFS=$(XDEFS) kaodv-arm
+	$(MAKE) -C $(AODVDIR)/kernel KERNEL_DIR=$(KERNEL_DIR) KCC=$(ARM_CC) LD=$(ARM_LD) XDEFS=$(XDEFS) kaodv-arm
 
 kaodv-mips: 
-	$(MAKE) -C $(AODVDIR)/lnx KERNEL_DIR=$(KERNEL_DIR) KCC=$(MIPS_CC) LD=$(MIPS_LD) XDEFS=$(XDEFS) kaodv-mips
+	$(MAKE) -C $(AODVDIR)/kernel KERNEL_DIR=$(KERNEL_DIR) KCC=$(MIPS_CC) LD=$(MIPS_LD) XDEFS=$(XDEFS) kaodv-mips
 
 tags: TAGS
-TAGS: lnx/TAGS
-	etags *.c *.h
+TAGS: kernel/TAGS
+	etags src/*/*.c src/*/*.h
 
-lnx/TAGS:
-	cd lnx && $(MAKE) TAGS
+kernel/TAGS:
+	cd kernel && $(MAKE) TAGS
 
 indent:
-	indent -kr -l 80 *.c \
-	$(filter-out $(SRC_NS_CPP:%.cc=%.h),$(wildcard *.h))
-	$(MAKE) -C lnx indent
+	indent -kr -l 80 src/*/*.c src/*/*.h
+	$(MAKE) -C kernel indent
 depend:
 	@echo "Updating Makefile dependencies..."
-	@makedepend -Y./ -- $(DEFS) -- $(SRC) &>/dev/null
-	@makedepend -a -Y./ -- $(KDEFS) kaodv.c &>/dev/null
+	@makedepend -Y./ -- $(DEFS) $(INC) -- $(SRC) &>/dev/null
+	@makedepend -a -Y./ -- $(KDEFS) kernel/kaodv.c &>/dev/null
 
 install: default
 	install -s -m 755 aodvd /usr/sbin/aodvd
@@ -167,8 +174,8 @@ uninstall:
 docs:
 	cd docs && $(MAKE) all
 clean: 
-	rm -f aodvd *~ *.o core *.log $(NS_TARGET) kaodv.ko endian endian.h $(NS_DIR)/*.o $(NS_DIR)/*~
-	cd lnx && $(MAKE) clean
+	rm -f aodvd *~ *.o core *.log $(NS_TARGET) kaodv.ko endian endian.h $(NS_DIR)/*.o $(NS_DIR)/*~ src/*/*.o
+	cd kernel && $(MAKE) clean
 #cd docs && $(MAKE) clean
 
 # DO NOT DELETE
