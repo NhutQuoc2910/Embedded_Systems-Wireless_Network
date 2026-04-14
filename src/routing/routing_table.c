@@ -1,4 +1,4 @@
-/*****************************************************************************
+﻿/*****************************************************************************
  *
  * Copyright (C) 2001 Uppsala University and Ericsson AB.
  *
@@ -16,7 +16,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * Authors: Erik Nordstr�m, <erik.nordstrom@it.uu.se>
+ * Authors: Erik Nordström, <erik.nordstrom@it.uu.se>
  *
  *****************************************************************************/
 
@@ -37,6 +37,9 @@
 #include "params.h"
 #include "seek_list.h"
 #include "nl.h"
+
+/* Global variable definition */
+struct routing_table rt_tbl;
 #endif				/* NS_PORT */
 
 static unsigned int hashing(struct in_addr *addr, hash_value * hash);

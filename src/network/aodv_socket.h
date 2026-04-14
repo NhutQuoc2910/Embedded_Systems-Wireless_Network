@@ -1,4 +1,4 @@
-/*****************************************************************************
+﻿/*****************************************************************************
  *
  * Copyright (C) 2001 Uppsala University & Ericsson AB.
  *
@@ -16,7 +16,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * Authors: Erik Nordstr�m, <erik.nordstrom@it.uu.se>
+ * Authors: Erik Nordström, <erik.nordstrom@it.uu.se>
  *          
  *
  *****************************************************************************/
@@ -42,9 +42,9 @@
 
 #ifndef NS_NO_DECLARATIONS
 
-struct timeval rreq_ratel[RREQ_RATELIMIT - 1], rerr_ratel[RERR_RATELIMIT - 1];
-int num_rreq;
-int num_rerr;
+extern struct timeval rreq_ratel[RREQ_RATELIMIT - 1], rerr_ratel[RERR_RATELIMIT - 1];
+extern int num_rreq;
+extern int num_rerr;
 
 void aodv_socket_init();
 void aodv_socket_send(AODV_msg * aodv_msg, struct in_addr dst, int len,

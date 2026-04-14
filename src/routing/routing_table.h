@@ -1,4 +1,4 @@
-/*****************************************************************************
+﻿/*****************************************************************************
  *
  * Copyright (C) 2001 Uppsala University & Ericsson AB.
  *
@@ -16,7 +16,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * Authors: Erik Nordstr�m, <erik.nordstrom@it.uu.se>
+ * Authors: Erik Nordström, <erik.nordstrom@it.uu.se>
  *          
  *
  *****************************************************************************/
@@ -89,7 +89,7 @@ void precursor_list_destroy(rt_table_t * rt);
 
 #ifndef NS_NO_DECLARATIONS
 
-struct routing_table rt_tbl;
+extern struct routing_table rt_tbl;
 
 void rt_table_init();
 void rt_table_destroy();
