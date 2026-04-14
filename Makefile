@@ -51,7 +51,7 @@ DEBUG=-g -DDEBUG
 # the command line.
 XDEFS=-DDEBUG
 # Extra Include Paths
-INC=-Isrc/core -Isrc/protocol -Isrc/network -Isrc/routing -Isrc/utils
+INC=-I. -Isrc/core -Isrc/protocol -Isrc/network -Isrc/routing -Isrc/utils
 
 CFLAGS=$(OPTS) $(DEBUG) $(DEFS) $(XDEFS) $(INC)
 LD_OPTS=
@@ -212,7 +212,7 @@ aodv_rrep.o: aodv_neighbor.h aodv_hello.h aodv_timeout.h aodv_socket.h
 aodv_rrep.o: aodv_rerr.h params.h debug.h
 aodv_rerr.o: aodv_rerr.h defs.h timer_queue.h list.h routing_table.h
 aodv_rerr.o: aodv_socket.h params.h aodv_timeout.h debug.h
-nl.o: defs.h timer_queue.h list.h lnx/kaodv-netlink.h debug.h aodv_rreq.h
+nl.o: defs.h timer_queue.h list.h kernel/kaodv-netlink.h debug.h aodv_rreq.h
 nl.o: seek_list.h routing_table.h aodv_timeout.h aodv_hello.h aodv_rrep.h
 nl.o: params.h aodv_socket.h aodv_rerr.h
 locality.o: locality.h defs.h timer_queue.h list.h debug.h
