@@ -54,7 +54,7 @@ graph TD
 | **Tìm đường (Route Discovery)** | Tạo, gửi và xử lý các thông điệp RREQ (Yêu cầu) và RREP (Phản hồi).    | `aodv_rreq.c`, `aodv_rrep.c`                     |
 | **Bảo trì đường truyền**        | Xử lý thông báo lỗi RERR và thông điệp Hello để duy trì lân cận.       | `aodv_rerr.c`, `aodv_hello.c`, `aodv_neighbor.c` |
 | **Bản định tuyến**              | Lưu trữ các đường đi, quản lý thời gian hết hạn (timeout).             | `routing_table.c/h`                              |
-| **Kernel Bridge**               | Giao tiếp với module nhân Linux qua cơ chế Netlink.                    | `nl.c/h`, `lnx/kaodv-netlink.c`                  |
+| **Kernel Bridge**               | Giao tiếp với module nhân Linux qua cơ chế Netlink.                    | `nl.c/h`, `kernel/kaodv-netlink.c`               |
 
 ---
 
