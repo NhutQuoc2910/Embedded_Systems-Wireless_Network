@@ -35,7 +35,7 @@
 #include <linux/rtnetlink.h>
 
 #include "defs.h"
-#include "lnx/kaodv-netlink.h"
+#include "kernel/kaodv-netlink.h"
 #include "debug.h"
 #include "aodv_rreq.h"
 #include "aodv_timeout.h"
