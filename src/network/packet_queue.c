@@ -2,9 +2,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "debug.h"
 #include "nfqueue.h"
 #include "packet_queue.h"
+#include "debug.h"
 #include "params.h"
 #include "routing_table.h"
 

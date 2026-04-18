@@ -34,8 +34,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "debug.h"
 #include "defs.h"
+#include "debug.h"
 #include "packet_queue.h"
 
 struct nlsock {

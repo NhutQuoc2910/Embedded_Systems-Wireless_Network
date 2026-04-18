@@ -8,8 +8,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include "debug.h"
 #include "defs.h"
+#include "debug.h"
 #include "nfqueue.h"
 #include "packet_input.h"
 
