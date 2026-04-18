@@ -3,80 +3,582 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AODV-UU Network Configurator</title>
-  <link rel="stylesheet" href="style.css">
-  <!-- Vis.js for Graph -->
-  <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  <title>AODV-UU · Network Configurator</title>
+
+  <!-- vis-network -->
+  <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  <!-- Socket.IO (served by Flask-SocketIO) -->
+  <script src="/socket.io/socket.io.js"></script>
+  <!-- Google Fonts: JetBrains Mono + Syne -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+
+  <style>
+    /* ── Reset & tokens ──────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:         #0a0a0b;
+      --bg2:        #111113;
+      --bg3:        #1a1a1e;
+      --border:     rgba(255,255,255,0.07);
+      --border2:    rgba(255,255,255,0.13);
+      --text:       #e8e8ea;
+      --muted:      #636369;
+      --accent:     #0071e3;
+      --accent2:    #30d158;
+      --warn:       #ff9f0a;
+      --danger:     #ff3b30;
+      --mono:       'JetBrains Mono', monospace;
+      --display:    'Syne', sans-serif;
+      --radius:     10px;
+      --radius-lg:  16px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* ── Scrollbar ───────────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+    /* ── Nav ─────────────────────────────────────────────────────── */
+    .nav {
+      position: sticky; top: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 32px;
+      height: 52px;
+      background: rgba(10,10,11,0.85);
+      backdrop-filter: blur(18px);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-brand {
+      font-family: var(--display);
+      font-size: 17px;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+    .nav-brand span { color: var(--accent); }
+    .nav-pills { display: flex; gap: 6px; }
+    .nav-pill {
+      padding: 5px 14px;
+      border-radius: 20px;
+      border: 1px solid var(--border2);
+      background: transparent;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all .15s;
+      text-decoration: none;
+    }
+    .nav-pill:hover { color: var(--text); border-color: var(--accent); }
+
+    /* ── Section layout ──────────────────────────────────────────── */
+    section { padding: 60px 32px; max-width: 1280px; margin: 0 auto; }
+    .section-label {
+      font-size: 11px;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 10px;
+    }
+    .section-title {
+      font-family: var(--display);
+      font-size: clamp(28px, 4vw, 48px);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.05;
+      margin-bottom: 8px;
+    }
+    .section-sub {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 36px;
+    }
+
+    /* ── Divider ─────────────────────────────────────────────────── */
+    hr { border: none; border-top: 1px solid var(--border); margin: 0 32px; }
+
+    /* ── Topology canvas ─────────────────────────────────────────── */
+    #topology-canvas {
+      width: 100%;
+      height: 420px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      margin-bottom: 24px;
+      overflow: hidden;
+    }
+
+    /* ── Control toolbar ─────────────────────────────────────────── */
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 16px;
+      align-items: center;
+    }
+    .toolbar-group {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      padding: 6px 10px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+    .toolbar-sep {
+      width: 1px;
+      height: 28px;
+      background: var(--border2);
+    }
+    .toolbar-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: var(--muted);
+      padding: 0 4px;
+    }
+
+    /* ── Inputs ──────────────────────────────────────────────────── */
+    input[type="text"], input[type="number"] {
+      background: var(--bg3);
+      border: 1px solid var(--border2);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 5px 10px;
+      outline: none;
+      transition: border-color .15s;
+      width: 100px;
+    }
+    input[type="text"]:focus, input[type="number"]:focus {
+      border-color: var(--accent);
+    }
+    input[type="number"] { width: 56px; }
+
+    /* ── Buttons ─────────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 6px 14px;
+      border-radius: 7px;
+      border: 1px solid transparent;
+      font-family: var(--mono);
+      font-size: 12px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all .15s;
+      line-height: 1;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    .btn-primary:hover { background: #0080ff; }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--text);
+      border-color: var(--border2);
+    }
+    .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+
+    .btn-success {
+      background: transparent;
+      color: var(--accent2);
+      border-color: var(--accent2);
+    }
+    .btn-success:hover { background: rgba(48,209,88,.1); }
+
+    .btn-warn {
+      background: transparent;
+      color: var(--warn);
+      border-color: var(--warn);
+    }
+    .btn-warn:hover { background: rgba(255,159,10,.1); }
+
+    .btn-danger {
+      background: transparent;
+      color: var(--danger);
+      border-color: var(--danger);
+    }
+    .btn-danger:hover { background: rgba(255,59,48,.1); }
+
+    /* Edge-mode active state */
+    .btn-ghost.active {
+      background: rgba(0,113,227,.15);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* ── Status panel ────────────────────────────────────────────── */
+    .status-bar {
+      display: flex;
+      gap: 24px;
+      align-items: center;
+      padding: 12px 20px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 32px;
+      flex-wrap: wrap;
+    }
+    .status-item {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 12px; color: var(--muted);
+    }
+    .status-item strong { color: var(--text); }
+    .status-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+    }
+    #status-topology .status-indicator,
+    #status-aodv .status-indicator {
+      display: inline-block;
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--muted);
+      margin-left: 4px;
+      vertical-align: middle;
+    }
+    #status-topology .status-indicator.active,
+    #status-aodv .status-indicator.active {
+      background: var(--accent2);
+      box-shadow: 0 0 6px var(--accent2);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: .5; }
+    }
+
+    /* ── Log terminal ────────────────────────────────────────────── */
+    .terminal {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      margin-bottom: 48px;
+    }
+    .terminal-header {
+      display: flex;
+      align-items: center;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg3);
+      gap: 6px;
+    }
+    .terminal-dot {
+      width: 11px; height: 11px; border-radius: 50%;
+    }
+    .terminal-dot-r { background: #ff5f57; }
+    .terminal-dot-y { background: #febc2e; }
+    .terminal-dot-g { background: #28c840; }
+    .terminal-title {
+      font-size: 11px; color: var(--muted);
+      margin-left: 6px; flex: 1;
+      letter-spacing: .06em;
+    }
+
+    /* Tab bar */
+    #log-tab-bar {
+      display: flex;
+      gap: 2px;
+      padding: 8px 12px 0;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+      flex-wrap: nowrap;
+    }
+    .log-tab {
+      padding: 5px 14px;
+      border-radius: 6px 6px 0 0;
+      border: 1px solid transparent;
+      border-bottom: none;
+      background: transparent;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 11px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all .15s;
+      position: relative;
+    }
+    .log-tab:hover { color: var(--text); }
+    .log-tab.active {
+      background: var(--bg);
+      border-color: var(--border2);
+      color: var(--text);
+      margin-bottom: -1px;
+      padding-bottom: 6px;
+    }
+    /* Unread badge */
+    .log-tab.unread::after {
+      content: '';
+      position: absolute;
+      top: 6px; right: 6px;
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    /* Pane area */
+    #log-tab-panes {
+      background: var(--bg);
+      min-height: 220px;
+      max-height: 320px;
+      overflow-y: auto;
+    }
+    .log-pane {
+      padding: 14px 18px;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.7;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .log-line { display: block; }
+    .log-info  { color: #8e8e93; }
+    .log-warn  { color: var(--warn); }
+    .log-error { color: var(--danger); }
+
+    /* ── Routing section ─────────────────────────────────────────── */
+    .routing-section { padding: 60px 32px; max-width: 1280px; margin: 0 auto; }
+
+    .ping-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 32px;
+      padding: 14px 18px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+    .ping-label { color: var(--muted); font-size: 11px; letter-spacing:.06em; }
+
+    /* Routing card grid — dynamic, generated by JS */
+    #routing-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+    .card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      transition: border-color .2s;
+    }
+    .card:hover { border-color: var(--border2); }
+    .card-title {
+      font-family: var(--display);
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .caption {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 12px;
+      font-family: var(--mono);
+    }
+    .code-block {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 11px;
+      line-height: 1.7;
+      white-space: pre-wrap;
+      word-break: break-all;
+      min-height: 48px;
+      color: var(--accent2);
+    }
+
+    /* ── Hint tooltip ────────────────────────────────────────────── */
+    .hint {
+      display: inline-block;
+      font-size: 11px;
+      color: var(--muted);
+      padding: 4px 10px;
+      border-radius: 4px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+    }
+
+    /* ── Footer ──────────────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 24px 32px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 11px;
+    }
+  </style>
 </head>
 <body>
 
-  <nav class="nav-glass">
-    <h1>AODV-UU Network System</h1>
+  <!-- ── Nav ─────────────────────────────────────────────────────── -->
+  <nav class="nav">
+    <span class="nav-brand">AODV<span>-UU</span></span>
+    <div class="nav-pills">
+      <a href="#topology"  class="nav-pill">Topology</a>
+      <a href="#logs"      class="nav-pill">Logs</a>
+      <a href="#routing"   class="nav-pill">Routing</a>
+    </div>
   </nav>
 
-  <!-- Hero Section -->
-  <section class="dark" id="hero">
-    <div class="section-content">
-      <h1 class="hero-title">Topology. Orchestrated.</h1>
-      <p class="hero-subtitle">Pro-level network namespaces control.</p>
-      
-      <div id="topology-canvas"></div>
+  <!-- ── Topology section ─────────────────────────────────────────── -->
+  <section id="topology">
+    <div class="section-label">Network Namespace Controller</div>
+    <h1 class="section-title">Topology.<br>Orchestrated.</h1>
+    <p class="section-sub">
+      Add nodes · drag to connect · right-click to delete · click edge to toggle link state
+    </p>
 
-      <div class="status-panel">
-        <div class="status-row">
-          <span>Topology Namespaces</span>
-          <span id="status-topology">Offline <span class="status-indicator"></span></span>
-        </div>
-        <div class="status-row">
-          <span>AODV Daemons</span>
-          <span id="status-aodv">Offline <span class="status-indicator"></span></span>
-        </div>
+    <!-- Status bar -->
+    <div class="status-bar">
+      <div class="status-item">
+        <strong>Namespaces</strong>
+        <span id="status-topology">Offline <span class="status-indicator"></span></span>
+      </div>
+      <div class="status-item">
+        <strong>AODV Daemons</strong>
+        <span id="status-aodv">Offline <span class="status-indicator"></span></span>
+      </div>
+    </div>
+
+    <!-- Graph canvas -->
+    <div id="topology-canvas"></div>
+
+    <!-- Toolbar row 1: Node + Link -->
+    <div class="toolbar">
+      <div class="toolbar-group">
+        <span class="toolbar-label">Node</span>
+        <input type="text" id="input-node-name" placeholder="ns-D (optional)">
+        <button class="btn btn-primary" id="btn-add-node">+ Add Node</button>
       </div>
 
-      <div class="cta-group">
-        <button class="btn-primary" onclick="triggerAction('topology')">Build Topology</button>
-        <button class="btn-pill" onclick="triggerAction('nfqueue')">Enable NFQUEUE</button>
-        <button class="btn-primary" onclick="triggerAction('start_aodv')">Start AODVD</button>
-        <button class="btn-pill" onclick="triggerAction('stop_aodv')">Stop AODVD</button>
-        <button class="btn-pill" onclick="triggerAction('cleanup')" style="color:#ff3b30; border-color:#ff3b30;">Cleanup All</button>
+      <div class="toolbar-sep"></div>
+
+      <div class="toolbar-group">
+        <span class="toolbar-label">Link</span>
+        <button class="btn btn-ghost" id="btn-add-link">⇄ Draw Link</button>
+        <span class="hint" id="edge-mode-hint" style="display:none">
+          Click source → destination &nbsp;·&nbsp; Esc to cancel
+        </span>
+      </div>
+    </div>
+
+    <!-- Toolbar row 2: Daemon lifecycle -->
+    <div class="toolbar">
+      <div class="toolbar-group">
+        <span class="toolbar-label">Setup</span>
+        <button class="btn btn-ghost"    id="btn-nfqueue">⚙ Enable NFQUEUE</button>
       </div>
 
-      <div id="log-output" class="code-block" style="display:none; text-align: left;">
-        Loading...
+      <div class="toolbar-sep"></div>
+
+      <div class="toolbar-group">
+        <span class="toolbar-label">Daemons</span>
+        <button class="btn btn-success"  id="btn-start-aodv">▶ Start AODVD</button>
+        <button class="btn btn-warn"     id="btn-stop-aodv">■ Stop AODVD</button>
+      </div>
+
+      <div class="toolbar-sep"></div>
+
+      <div class="toolbar-group">
+        <button class="btn btn-danger"   id="btn-cleanup">✕ Cleanup All</button>
       </div>
     </div>
   </section>
 
-  <!-- Light Section for Routing Tables -->
-  <section class="light" id="routing">
-    <div class="section-content">
-      <h2 class="section-title">Routing Intelligence.</h2>
-      <p style="font-size: 21px; margin-bottom: 20px;">Real-time kernel routing tables across namespaces.</p>
-      
-      <div class="cta-group">
-        <button class="btn-primary" onclick="refreshStatus()">Refresh Tables</button>
-        <button class="btn-pill" onclick="triggerAction('ping')" style="color:var(--apple-blue); border-color:var(--apple-blue);">Ping A &rarr; C (Tạo traffic)</button>
+  <hr>
+
+  <!-- ── Log terminal ─────────────────────────────────────────────── -->
+  <section id="logs">
+    <div class="section-label">Real-time Output</div>
+    <h2 class="section-title">Live Logs.</h2>
+    <p class="section-sub">
+      Per-namespace tabs · streamed directly from aodvd via WebSocket
+    </p>
+
+    <div class="terminal">
+      <div class="terminal-header">
+        <div class="terminal-dot terminal-dot-r"></div>
+        <div class="terminal-dot terminal-dot-y"></div>
+        <div class="terminal-dot terminal-dot-g"></div>
+        <span class="terminal-title">aodvd output · socket stream</span>
       </div>
 
-      <div class="grid">
-        <div class="card">
-          <h3 class="card-title">Namespace A</h3>
-          <p class="caption">10.0.1.1</p>
-          <div class="code-block" id="rt-ns-A">No routes</div>
-        </div>
-        <div class="card">
-          <h3 class="card-title">Namespace B</h3>
-          <p class="caption">10.0.1.2 | 10.0.2.1</p>
-          <div class="code-block" id="rt-ns-B">No routes</div>
-        </div>
-        <div class="card">
-          <h3 class="card-title">Namespace C</h3>
-          <p class="caption">10.0.2.2</p>
-          <div class="code-block" id="rt-ns-C">No routes</div>
-        </div>
-      </div>
+      <!-- Tab bar — populated dynamically by main.js -->
+      <div id="log-tab-bar"></div>
+
+      <!-- Tab panes — populated dynamically by main.js -->
+      <div id="log-tab-panes"></div>
     </div>
   </section>
+
+  <hr>
+
+  <!-- ── Routing section ──────────────────────────────────────────── -->
+  <section id="routing" class="routing-section">
+    <div class="section-label">Kernel Routing Tables</div>
+    <h2 class="section-title">Routing<br>Intelligence.</h2>
+    <p class="section-sub">
+      Live kernel routing tables across all namespaces · one card per node
+    </p>
+
+    <!-- Ping controls -->
+    <div class="ping-row">
+      <span class="ping-label">PING</span>
+      <input type="text"   id="ping-src"   placeholder="src ns  (ns-A)">
+      <span class="ping-label">→</span>
+      <input type="text"   id="ping-dst"   placeholder="dst IP  (10.0.1.2)">
+      <input type="number" id="ping-count" placeholder="count" value="5" min="1" max="100">
+      <button class="btn btn-primary" id="btn-ping">▶ Ping</button>
+      <button class="btn btn-ghost"   id="btn-refresh-rt">↻ Refresh Tables</button>
+    </div>
+
+    <!-- Routing cards — generated dynamically by main.js renderRoutingCards() -->
+    <div id="routing-grid">
+      <p style="color:var(--muted);grid-column:1/-1">
+        No nodes yet. Add nodes and links first.
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    AODV-UU Network Dashboard &nbsp;·&nbsp;
+    <a href="https://github.com/kjellwinblad/aodv-uu" style="color:var(--muted)">aodv-uu</a>
+    &nbsp;·&nbsp; Linux Network Namespace · NFQUEUE
+  </footer>
+
+  <script>
+    // Show/hide edge-mode hint when btn-add-link gets .active class
+    const addLinkBtn = document.getElementById('btn-add-link');
+    const edgeHint   = document.getElementById('edge-mode-hint');
+    const observer   = new MutationObserver(() => {
+      edgeHint.style.display = addLinkBtn.classList.contains('active') ? 'inline-block' : 'none';
+    });
+    if (addLinkBtn) observer.observe(addLinkBtn, { attributes: true, attributeFilter: ['class'] });
+  </script>
 
   <script src="main.js"></script>
 </body>
