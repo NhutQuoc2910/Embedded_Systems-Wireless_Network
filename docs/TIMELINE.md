@@ -1,8 +1,8 @@
 # Timeline Thực Hiện Đồ Án AODV-UU (2 Tuần)
 
-> **Phân bố điểm:**
+> **Phân bố điểm:**<br>
 > Ratio 1 — Lý thuyết 30% · Demo 35% · Phân tích mã nguồn 35%<br>
-> Ratio 2 — Thuyết trình 60% · Báo cáo/slide/code 20% · Tham gia buổi khác 20%
+> Ratio 2 — Thuyết trình 60% · Báo cáo/slide/code 20%
 
 ---
 
@@ -16,7 +16,7 @@
   - `aodv_rreq.c` / `aodv_rrep.c` — flow xử lý route discovery
   - `aodv_rerr.c` / `aodv_hello.c` — bảo trì đường truyền
   - `routing_table.c` — cấu trúc dữ liệu bảng định tuyến, timeout
-  - `nl.c` / `kaodv-netlink.c` — giao tiếp kernel↔user via Netlink
+  - `nl.c` / `nfqueue.c` / `packet_input.c` — bridge kernel↔user qua rtnetlink + NFQUEUE
 - Vẽ sơ đồ luồng hàm: transmitting / receiving / forwarding / processing
 - Ghi chú các main data structures: `struct rt_table`, `struct rreq`, `struct rrep`, `struct rerr`
 - **Viết báo cáo song song:** Part 01 (Introduction) + Part 02 (Related work) + List of Acronyms
@@ -32,11 +32,12 @@
 - Viết `setup.sh`: tạo 3 node (`ns-A`, `ns-B`, `ns-C`) với `ip netns`
 - Cấu hình `veth pair` kết nối các namespace
 - Cấu hình `iptables NFQUEUE` độc lập trong từng namespace
+- Bổ sung default route để packet local đi được vào `OUTPUT` chain
 - Kiểm tra kết nối cơ bản: `ping` qua lại giữa các node
 - **Viết báo cáo song song:** Part 03 — vẽ sơ đồ kiến trúc demo (hình minh họa cho List of Figures)
 
 ### Ngày 5: Kịch bản Route Discovery — Capture & Phân tích
-- Chạy `aodvd` trên cả 3 node với flag `-l` (verbose log)
+- Chạy `aodvd` trên cả 3 node với flag `-l` (log file + foreground debug output)
 - Bật `tcpdump` capture trên tất cả interface, lưu `.pcap`
 - Thực hiện route discovery: `ns-A` → `ns-C` multi-hop qua `ns-B`
 - Verify trong Wireshark: RREQ broadcast, RREP unicast, routing table update
@@ -95,7 +96,8 @@
 
 | Hạng mục | Nội dung | Liên quan đến |
 | :--- | :--- | :--- |
-| `setup.sh` | Script dựng topology 3 node với NFQUEUE | Demo 35% |
+| `build.sh` | Script cài dependency và build `aodvd` | Demo 35% |
+| `setup.sh` | Script dựng topology/NFQUEUE với subcommand `topology`, `nfqueue`, `cleanup` | Demo 35% |
 | `demo.sh` | Script chạy 3 kịch bản tự động | Demo 35% |
 | `.pcap` files | Capture route discovery, link failure | Demo 35% |
 | Log files | Output từ `aodvd -l` mỗi kịch bản | Demo 35% |

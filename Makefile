@@ -7,7 +7,8 @@ SRC =	src/core/main.c src/utils/list.c src/utils/debug.c src/utils/timer_queue.c
 	src/protocol/aodv_neighbor.c src/protocol/aodv_timeout.c \
 	src/routing/routing_table.c src/routing/seek_list.c \
 	src/protocol/aodv_rreq.c src/protocol/aodv_rrep.c \
-	src/protocol/aodv_rerr.c src/network/nl.c
+	src/protocol/aodv_rerr.c src/network/nl.c src/network/nfqueue.c \
+	src/network/packet_queue.c src/network/packet_input.c
 
 SRC_NS = src/utils/debug.c src/utils/list.c src/utils/timer_queue.c \
 		src/network/aodv_socket.c src/protocol/aodv_hello.c \
@@ -54,7 +55,7 @@ XDEFS=-DDEBUG
 INC=-I. -Isrc/core -Isrc/protocol -Isrc/network -Isrc/routing -Isrc/utils
 
 CFLAGS=$(OPTS) $(DEBUG) $(DEFS) $(XDEFS) $(INC)
-LD_OPTS=
+LD_OPTS=-lnetfilter_queue
 
 ifneq (,$(findstring CONFIG_GATEWAY,$(DEFS)))
 SRC:=$(SRC) src/routing/locality.c
@@ -90,13 +91,13 @@ NS_TARGET=libaodv-uu.a
 AR=ar
 AR_FLAGS=rc
 
-.PHONY: default clean install uninstall depend tags aodvd-arm docs kaodv kaodv-arm kaodv-mips
+.PHONY: default clean clean-kernel install uninstall depend tags aodvd-arm docs kaodv kaodv-arm kaodv-mips
 
-default: aodvd kaodv
+default: aodvd
 
-arm: aodvd-arm kaodv-arm
+arm: aodvd-arm
 
-mips: aodvd-mips kaodv-mips
+mips: aodvd-mips
 
 endian.h:
 	$(CC) $(CFLAGS) -o endian src/core/endian.c
@@ -154,29 +155,19 @@ depend:
 	@makedepend -Y./ -- $(DEFS) $(INC) -- $(SRC) &>/dev/null
 	@makedepend -a -Y./ -- $(KDEFS) kernel/kaodv.c &>/dev/null
 
-install: default
+install: aodvd
 	install -s -m 755 aodvd /usr/sbin/aodvd
-	@if [ ! -d /lib/modules/$(KERNEL)/aodv ]; then \
-		mkdir /lib/modules/$(KERNEL)/aodv; \
-	fi
-
-	@echo "Installing kernel module in /lib/modules/$(KERNEL)/aodv/";
-	@if [ -f ./kaodv.ko ]; then \
-		install -m 644 kaodv.ko /lib/modules/$(KERNEL)/aodv/kaodv.ko; \
-	else \
-		install -m 644 kaodv.o /lib/modules/$(KERNEL)/aodv/kaodv.o; \
-	fi
-	/sbin/depmod -a
 uninstall:
 	rm -f /usr/sbin/aodvd
-	rm -rf /lib/modules/$(KERNEL)/aodv
 
 docs:
 	cd docs && $(MAKE) all
 clean: 
 	rm -f aodvd *~ *.o core *.log $(NS_TARGET) kaodv.ko endian endian.h $(NS_DIR)/*.o $(NS_DIR)/*~ src/*/*.o
-	cd kernel && $(MAKE) clean
 #cd docs && $(MAKE) clean
+
+clean-kernel:
+	cd kernel && $(MAKE) clean
 
 # DO NOT DELETE
 

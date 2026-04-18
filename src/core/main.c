@@ -39,6 +39,8 @@
 #include "debug.h"
 #include "defs.h"
 #include "nl.h"
+#include "packet_input.h"
+#include "packet_queue.h"
 #include "params.h"
 #include "routing_table.h"
 #include "timer_queue.h"
@@ -285,59 +287,13 @@ int attach_callback_func(int fd, callback_func_t func) {
    are located in the current directory. use those. Otherwise fall
    back to modprobe. */
 
+/* Legacy hooks kept so older call sites do not break; the NFQUEUE path
+   no longer loads or unloads a kernel module at runtime. */
 void load_modules(char *ifname) {
-  struct stat st;
-  char buf[1024], *l = NULL;
-  int found = 0;
-  FILE *m;
-
-  memset(buf, '\0', 64);
-
-  if (stat("./kaodv.ko", &st) == 0)
-    sprintf(buf, "/sbin/insmod kaodv.ko ifname=%s &>/dev/null", ifname);
-  else if (stat("./kaodv.o", &st) == 0)
-    sprintf(buf, "/sbin/insmod kaodv.o ifname=%s &>/dev/null", ifname);
-  else
-    sprintf(buf, "/sbin/modprobe kaodv ifname=%s &>/dev/null", ifname);
-
-  if (system(buf) == -1) {
-    fprintf(stderr, "Could not load kaodv module\n");
-    exit(-1);
-  }
-
-  usleep(100000);
-
-  /* Check result */
-  m = fopen("/proc/modules", "r");
-  while (fgets(buf, sizeof(buf), m)) {
-    l = strtok(buf, " \t");
-    if (!strcmp(l, "kaodv"))
-      found++;
-    if (!strcmp(l, "ipchains")) {
-      fprintf(stderr, "The ipchains kernel module is loaded and prevents "
-                      "AODV-UU from functioning properly.\n");
-      exit(-1);
-    }
-  }
-  fclose(m);
-
-  if (found < 1) {
-    fprintf(
-        stderr,
-        "A kernel module could not be loaded, check your installation... %d\n",
-        found);
-    exit(-1);
-  }
+  (void)ifname;
 }
 
 void remove_modules(void) {
-  int ret;
-
-  ret = system("/sbin/rmmod kaodv &>/dev/null");
-
-  if (ret != 0) {
-    fprintf(stderr, "Could not remove kernel module kaodv\n");
-  }
 }
 
 void host_init(char *ifname) {
@@ -452,9 +408,6 @@ void host_init(char *ifname) {
   } while ((iface = strtok(NULL, ",")));
 
   close(if_sock);
-
-  /* Load kernel modules */
-  load_modules(ifnames);
 
   /* Enable IP forwarding and set other kernel options... */
   if (set_kernel_options() < 0) {
@@ -625,10 +578,13 @@ int main(int argc, char **argv) {
   /* Initialize data structures and services... */
   rt_table_init();
   log_init();
-  /*   packet_queue_init(); */
+  packet_queue_init();
   host_init(ifname);
-  /*   packet_input_init(); */
   nl_init();
+  if (packet_input_init() < 0) {
+    fprintf(stderr, "Could not initialize NFQUEUE packet capture\n");
+    exit(-1);
+  }
   nl_send_conf_msg();
   aodv_socket_init();
 #ifdef LLFEEDBACK
@@ -697,6 +653,7 @@ static void cleanup(void) {
     llf_cleanup();
 #endif
   log_cleanup();
+  packet_queue_destroy();
+  packet_input_cleanup();
   nl_cleanup();
-  remove_modules();
 }

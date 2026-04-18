@@ -35,6 +35,7 @@
 #include "defs.h"
 #include "debug.h"
 #include "params.h"
+#include "packet_queue.h"
 #include "seek_list.h"
 #include "nl.h"
 
@@ -181,12 +182,10 @@ rt_table_t *NS_CLASS rt_table_insert(struct in_addr dest_addr,
 	/* In case there are buffered packets for this destination, we
 	 * send them on the new route. */
 	if (rt->state == VALID && seek_list_remove(seek_list_find(dest_addr))) {
-#ifdef NS_PORT
 		if (rt->flags & RT_INET_DEST)
 			packet_queue_set_verdict(dest_addr, PQ_ENC_SEND);
 		else
 			packet_queue_set_verdict(dest_addr, PQ_SEND);
-#endif
 	}
 	return rt;
 }
@@ -261,12 +260,10 @@ rt_table_t *NS_CLASS rt_table_update(rt_table_t * rt, struct in_addr next,
 	 * them on the new route. */
 	if (rt->state == VALID
 	    && seek_list_remove(seek_list_find(rt->dest_addr))) {
-#ifdef NS_PORT
 		if (rt->flags & RT_INET_DEST)
 			packet_queue_set_verdict(rt->dest_addr, PQ_ENC_SEND);
 		else
 			packet_queue_set_verdict(rt->dest_addr, PQ_SEND);
-#endif
 	}
 	return rt;
 }

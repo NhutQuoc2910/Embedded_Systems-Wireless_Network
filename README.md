@@ -2,6 +2,18 @@
 
 Đồ án Hệ thống nhúng Mạng không dây
 
+Repo hiện chạy demo Linux theo hướng `aodvd + iptables + NFQUEUE`.
+`kaodv.ko` được giữ lại như mã legacy/tham khảo, không còn là đường chạy mặc
+định cho kernel 5.x/6.x.
+
+### Chạy nhanh
+
+```bash
+chmod +x scripts/build.sh scripts/setup.sh
+./scripts/build.sh
+sudo ./scripts/setup.sh topology
+```
+
 ### Cấu trúc repo
 
 ```text
@@ -15,7 +27,7 @@ AODV-UU/
 ├── kernel/   # Mã nguồn module nhân Linux (trước là lnx/)
 ├── sim/      # Tích hợp mô phỏng NS-2 (trước là ns-2/)
 ├── docs/     # Tài liệu dự án
-├── scripts/  # Các script hỗ trợ (setup.sh)
+├── scripts/  # Các script hỗ trợ (build.sh, setup.sh)
 ├── extra/    # Tài liệu tham khảo (RFC, ChangeLog, GPL)
 └── Makefile  # File build chính (ở root)
 ```
