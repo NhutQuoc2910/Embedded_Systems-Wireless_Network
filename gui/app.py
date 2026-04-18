@@ -34,16 +34,16 @@ def perform_action(action):
         res = run_cmd("sudo ./scripts/setup.sh cleanup")
     elif action == 'start_aodv':
         run_cmd("sudo pkill -f aodvd")
-        # Sử dụng cờ -d (daemon mode) của aodvd để chạy nền an toàn
-        run_cmd("sudo ip netns exec ns-A ./aodvd -d -l -i veth-AB-a")
-        run_cmd("sudo ip netns exec ns-B ./aodvd -d -l -i veth-AB-b,veth-BC-b")
-        run_cmd("sudo ip netns exec ns-C ./aodvd -d -l -i veth-BC-c")
+        # Sử dụng cờ -d (daemon mode) kèm chuyển hướng i/o để không block Python API
+        run_cmd("sudo ip netns exec ns-A ./aodvd -d -l -i veth-AB-a < /dev/null > /dev/null 2>&1 &")
+        run_cmd("sudo ip netns exec ns-B ./aodvd -d -l -i veth-AB-b,veth-BC-b < /dev/null > /dev/null 2>&1 &")
+        run_cmd("sudo ip netns exec ns-C ./aodvd -d -l -i veth-BC-c < /dev/null > /dev/null 2>&1 &")
         res = {"success": True, "output": "AODV daemons started in background."}
     elif action == 'stop_aodv':
         res = run_cmd("sudo pkill -f aodvd")
         res['output'] = "AODV daemons stopped."
     elif action == 'ping':
-        res = run_cmd("sudo ip netns exec ns-A ping -c 3 10.0.2.2")
+        res = run_cmd("sudo ip netns exec ns-A ping -c 6 10.0.2.2")
     else:
         return jsonify({"success": False, "error": "Unknown action"})
     
