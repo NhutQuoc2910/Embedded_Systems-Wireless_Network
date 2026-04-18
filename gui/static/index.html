@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AODV-UU Network Configurator</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Vis.js for Graph -->
+  <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+</head>
+<body>
+
+  <nav class="nav-glass">
+    <h1>AODV-UU Network System</h1>
+  </nav>
+
+  <!-- Hero Section -->
+  <section class="dark" id="hero">
+    <div class="section-content">
+      <h1 class="hero-title">Topology. Orchestrated.</h1>
+      <p class="hero-subtitle">Pro-level network namespaces control.</p>
+      
+      <div id="topology-canvas"></div>
+
+      <div class="status-panel">
+        <div class="status-row">
+          <span>Topology Namespaces</span>
+          <span id="status-topology">Offline <span class="status-indicator"></span></span>
+        </div>
+        <div class="status-row">
+          <span>AODV Daemons</span>
+          <span id="status-aodv">Offline <span class="status-indicator"></span></span>
+        </div>
+      </div>
+
+      <div class="cta-group">
+        <button class="btn-primary" onclick="triggerAction('topology')">Build Topology</button>
+        <button class="btn-pill" onclick="triggerAction('nfqueue')">Enable NFQUEUE</button>
+        <button class="btn-primary" onclick="triggerAction('start_aodv')">Start AODVD</button>
+        <button class="btn-pill" onclick="triggerAction('stop_aodv')">Stop AODVD</button>
+        <button class="btn-pill" onclick="triggerAction('cleanup')" style="color:#ff3b30; border-color:#ff3b30;">Cleanup All</button>
+      </div>
+
+      <div id="log-output" class="code-block" style="display:none; text-align: left;">
+        Loading...
+      </div>
+    </div>
+  </section>
+
+  <!-- Light Section for Routing Tables -->
+  <section class="light" id="routing">
+    <div class="section-content">
+      <h2 class="section-title">Routing Intelligence.</h2>
+      <p style="font-size: 21px; margin-bottom: 20px;">Real-time kernel routing tables across namespaces.</p>
+      
+      <div class="cta-group">
+        <button class="btn-primary" onclick="refreshStatus()">Refresh Tables</button>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <h3 class="card-title">Namespace A</h3>
+          <p class="caption">10.0.1.1</p>
+          <div class="code-block" id="rt-ns-A">No routes</div>
+        </div>
+        <div class="card">
+          <h3 class="card-title">Namespace B</h3>
+          <p class="caption">10.0.1.2 | 10.0.2.1</p>
+          <div class="code-block" id="rt-ns-B">No routes</div>
+        </div>
+        <div class="card">
+          <h3 class="card-title">Namespace C</h3>
+          <p class="caption">10.0.2.2</p>
+          <div class="code-block" id="rt-ns-C">No routes</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script src="main.js"></script>
+</body>
+</html>

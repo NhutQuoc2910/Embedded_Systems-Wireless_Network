@@ -1,0 +1,254 @@
+@import url('https://fonts.cdnfonts.com/css/sf-pro-display');
+
+:root {
+  --black: #000000;
+  --light-gray: #f5f5f7;
+  --near-black: #1d1d1f;
+  
+  --apple-blue: #0071e3;
+  --link-blue: #0066cc;
+  --bright-blue: #2997ff;
+  
+  --text-white: #ffffff;
+  --text-dark: rgba(0, 0, 0, 0.8);
+  --text-muted: rgba(0, 0, 0, 0.48);
+  
+  --nav-bg: rgba(0, 0, 0, 0.8);
+  --card-dark: #272729;
+  
+  --shadow-soft: rgba(0, 0, 0, 0.22) 3px 5px 30px 0px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'SF Pro Text', 'SF Pro Icons', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  color: var(--near-black);
+  background-color: var(--black);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.47;
+  letter-spacing: -0.374px;
+}
+
+h1, h2, h3, .display {
+  font-family: 'SF Pro Display', 'SF Pro Icons', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+/* Navigation - Glass effect */
+.nav-glass {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 48px;
+  background-color: var(--nav-bg);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-glass h1 {
+  color: var(--text-white);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: normal;
+}
+
+/* Sections */
+section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 100px 20px;
+  min-height: 100vh;
+  width: 100%;
+}
+
+section.dark {
+  background-color: var(--black);
+  color: var(--text-white);
+}
+
+section.light {
+  background-color: var(--light-gray);
+  color: var(--near-black);
+}
+
+.section-content {
+  max-width: 980px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+/* Typography */
+.hero-title {
+  font-size: 56px;
+  font-weight: 600;
+  line-height: 1.07;
+  letter-spacing: -0.28px;
+  margin-bottom: 20px;
+}
+
+.hero-subtitle {
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 1.14;
+  letter-spacing: 0.196px;
+  margin-bottom: 40px;
+}
+
+.section-title {
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1.10;
+  margin-bottom: 15px;
+}
+
+.card-title {
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.19;
+  letter-spacing: 0.231px;
+  margin-bottom: 8px;
+}
+
+/* Buttons */
+.cta-group {
+  display: flex;
+  gap: 15px;
+  margin-top: 20px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--apple-blue);
+  outline-offset: 2px;
+}
+
+.btn-primary {
+  background-color: var(--apple-blue);
+  color: var(--text-white);
+  padding: 8px 15px;
+  border-radius: 8px;
+  font-size: 17px;
+  font-family: 'SF Pro Text', sans-serif;
+  font-weight: 400;
+  border: 1px solid transparent;
+}
+
+.btn-primary:active {
+  background-color: #ededf2;
+  color: var(--apple-blue);
+}
+
+.btn-link, .btn-pill {
+  background-color: transparent;
+  color: var(--bright-blue);
+  font-size: 17px;
+  border-radius: 980px;
+  padding: 8px 15px;
+  border: 1px solid var(--bright-blue);
+}
+
+.light .btn-link, .light .btn-pill {
+  color: var(--link-blue);
+  border-color: var(--link-blue);
+}
+
+.btn-pill:hover {
+  background-color: rgba(41, 151, 255, 0.1);
+}
+.light .btn-pill:hover {
+  background-color: rgba(0, 102, 204, 0.1);
+}
+
+/* Cards & Layout */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+  width: 100%;
+  margin-top: 40px;
+}
+
+.card {
+  background-color: var(--card-dark);
+  border-radius: 8px;
+  padding: 24px;
+  text-align: left;
+  box-shadow: var(--shadow-soft);
+  display: flex;
+  flex-direction: column;
+}
+
+.light .card {
+  background-color: #ffffff;
+}
+
+.code-block {
+  background-color: var(--black);
+  color: #00ff00;
+  font-family: monospace;
+  padding: 15px;
+  border-radius: 5px;
+  font-size: 14px;
+  margin-top: 15px;
+  overflow-x: auto;
+  min-height: 80px;
+}
+
+/* Topology Graph Canvas */
+#topology-canvas {
+  width: 100%;
+  height: 500px;
+  background-color: var(--black);
+  border-radius: 12px;
+  margin: 40px 0;
+}
+
+.status-indicator {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: #ff3b30; /* red */
+  margin-left: 8px;
+}
+
+.status-indicator.active {
+  background-color: #34c759; /* green */
+}
+
+/* Status Table */
+.status-panel {
+  width: 100%;
+  max-width: 980px;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 20px;
+  margin-top: 20px;
+}
+
+.status-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 15px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+.status-row:last-child { border-bottom: none; }
