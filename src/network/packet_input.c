@@ -1,4 +1,3 @@
-#include <linux/netfilter.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
 #include <string.h>
@@ -11,6 +10,7 @@
 #include "aodv_timeout.h"
 #include "defs.h"
 #include "debug.h"
+#include "netfilter_compat.h"
 #include "nfqueue.h"
 #include "packet_input.h"
 #include "packet_queue.h"

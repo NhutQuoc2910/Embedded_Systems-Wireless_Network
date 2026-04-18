@@ -1,10 +1,10 @@
-#include <linux/netfilter.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 #include "nfqueue.h"
 #include "packet_queue.h"
 #include "debug.h"
+#include "netfilter_compat.h"
 #include "params.h"
 #include "routing_table.h"
 

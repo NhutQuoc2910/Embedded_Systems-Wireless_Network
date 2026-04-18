@@ -1,7 +1,7 @@
+#include <arpa/inet.h>
+#include <stdint.h>
 #include <errno.h>
-#include <linux/netfilter.h>
 #include <libnetfilter_queue/libnetfilter_queue.h>
-#include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +10,7 @@
 
 #include "defs.h"
 #include "debug.h"
+#include "netfilter_compat.h"
 #include "nfqueue.h"
 #include "packet_input.h"
 
