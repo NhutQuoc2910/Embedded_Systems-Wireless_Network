@@ -34,10 +34,10 @@ def perform_action(action):
         res = run_cmd("sudo ./scripts/setup.sh cleanup")
     elif action == 'start_aodv':
         run_cmd("sudo pkill -f aodvd")
-        # Run daemons in background preventing hang
-        run_cmd("sudo ip netns exec ns-A ./aodvd -l -i veth-AB-a > /dev/null 2>&1 &")
-        run_cmd("sudo ip netns exec ns-B ./aodvd -l -i veth-AB-b,veth-BC-b > /dev/null 2>&1 &")
-        run_cmd("sudo ip netns exec ns-C ./aodvd -l -i veth-BC-c > /dev/null 2>&1 &")
+        # Sử dụng cờ -d (daemon mode) của aodvd để chạy nền an toàn
+        run_cmd("sudo ip netns exec ns-A ./aodvd -d -l -i veth-AB-a")
+        run_cmd("sudo ip netns exec ns-B ./aodvd -d -l -i veth-AB-b,veth-BC-b")
+        run_cmd("sudo ip netns exec ns-C ./aodvd -d -l -i veth-BC-c")
         res = {"success": True, "output": "AODV daemons started in background."}
     elif action == 'stop_aodv':
         res = run_cmd("sudo pkill -f aodvd")
