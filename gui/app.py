@@ -42,6 +42,8 @@ def perform_action(action):
     elif action == 'stop_aodv':
         res = run_cmd("sudo pkill -f aodvd")
         res['output'] = "AODV daemons stopped."
+    elif action == 'ping':
+        res = run_cmd("sudo ip netns exec ns-A ping -c 3 10.0.2.2")
     else:
         return jsonify({"success": False, "error": "Unknown action"})
     
