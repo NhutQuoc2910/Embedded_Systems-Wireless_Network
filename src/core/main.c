@@ -1,4 +1,4 @@
-ï»¿/*****************************************************************************
+/*****************************************************************************
  *
  * Copyright (C) 2001 Uppsala University and Ericsson AB.
  *
@@ -16,7 +16,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * Author: Erik NordstrÃ¶m, <erik.nordstrom@it.uu.se>
+ * Author: Erik Nordström, <erik.nordstrom@it.uu.se>
  *
  *****************************************************************************/
 #include <ctype.h>
@@ -48,11 +48,11 @@
 
 #ifdef LLFEEDBACK
 #include "llf.h"
+#endif
 
 /* Global variable definitions */
 struct host_info this_host;
 unsigned int dev_indices[MAX_NR_INTERFACES];
-#endif
 
 /* Global variables: */
 int log_to_file = 0;
@@ -134,7 +134,7 @@ void usage(int status) {
       "-q, --quality-threshold Set a minimum signal quality threshold for "
       "control packets.\n"
       "-V, --version           Show version.\n\n"
-      "Erik NordstrÃ¶m, <erik.nordstrom@it.uu.se>\n\n",
+      "Erik Nordström, <erik.nordstrom@it.uu.se>\n\n",
       progname, AODV_LOG_PATH, AODV_RT_LOG_PATH);
 
   exit(status);
@@ -544,8 +544,8 @@ int main(int argc, char **argv) {
       ratelimit = !ratelimit;
       break;
     case 'V':
-      printf("\nAODV-UU v%s, %s Â© Uppsala University & Ericsson AB.\nAuthor: "
-             "Erik NordstrÃ¶m, <erik.nordstrom@it.uu.se>\n\n",
+      printf("\nAODV-UU v%s, %s © Uppsala University & Ericsson AB.\nAuthor: "
+             "Erik Nordström, <erik.nordstrom@it.uu.se>\n\n",
              AODV_UU_VERSION, DRAFT_VERSION);
       exit(0);
       break;
