@@ -1,4 +1,4 @@
-﻿/*****************************************************************************
+/*****************************************************************************
  *
  * Copyright (C) 2001 Uppsala University and Ericsson AB.
  *
@@ -124,6 +124,12 @@ void NS_CLASS aodv_socket_init()
 	aodv_addr.sin_family = AF_INET;
 	aodv_addr.sin_port = htons(AODV_PORT);
 	aodv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+	if (setsockopt(DEV_NR(i).sock, SOL_SOCKET, SO_REUSEADDR,
+		       &on, sizeof(int)) < 0) {
+	    perror("SO_REUSEADDR failed ");
+	    exit(-1);
+	}
 
 	retval = bind(DEV_NR(i).sock, (struct sockaddr *) &aodv_addr,
 		      sizeof(struct sockaddr));

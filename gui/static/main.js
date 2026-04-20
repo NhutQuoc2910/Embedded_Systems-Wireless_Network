@@ -314,8 +314,10 @@ function renderRoutingCards(tables) {
   const grid = document.getElementById("routing-grid");
   if (!grid) return;
 
-  // Build a set of current ns keys in response
   const nsKeys = Object.keys(tables);
+
+  // Remove placeholder paragraphs
+  grid.querySelectorAll("p").forEach(p => p.remove());
 
   // Remove cards for nodes that no longer exist
   grid.querySelectorAll(".card[data-ns]").forEach(card => {
@@ -323,26 +325,61 @@ function renderRoutingCards(tables) {
   });
 
   nsKeys.forEach(ns => {
-    const { routes, error, ips } = tables[ns];
+    const entry  = tables[ns] || {};
+    const routes = typeof entry === "object" ? (entry.routes || "") : String(entry);
+    const error  = typeof entry === "object" ? (entry.error  || "") : "";
+    const ips    = typeof entry === "object" ? (entry.ips    || []) : [];
+    const nfq    = typeof entry === "object" ? entry.nfqueue_active : false;
+    const aodvd  = typeof entry === "object" ? entry.aodvd_running  : false;
+    const ifaces = typeof entry === "object" ? (entry.ifaces || []) : [];
 
     let card = grid.querySelector(`.card[data-ns="${ns}"]`);
     if (!card) {
       card = document.createElement("div");
       card.className  = "card";
       card.dataset.ns = ns;
-      card.innerHTML  = `
-        <h3 class="card-title">${ns}</h3>
-        <p class="caption ns-ips"></p>
-        <div class="code-block ns-routes"></div>
-      `;
       grid.appendChild(card);
     }
 
-    card.querySelector(".ns-ips").textContent    = ips.join(" | ") || "no IPs yet";
-    card.querySelector(".ns-routes").textContent = routes || error || "No routes";
+    // Status badges
+    const aodvBadge = aodvd
+      ? `<span style="color:#30d158;font-size:10px">● aodvd</span>`
+      : `<span style="color:#636366;font-size:10px">○ aodvd</span>`;
+    const nfqBadge = nfq
+      ? `<span style="color:#0071e3;font-size:10px">● NFQUEUE</span>`
+      : `<span style="color:#ff3b30;font-size:10px">○ NFQUEUE</span>`;
+
+    // Interface list
+    const ifaceStr = ifaces.length
+      ? ifaces.join("  ")
+      : "no interfaces";
+
+    // Kernel routes — highlight AODV-learned routes (via entries)
+    const routeLines = routes
+      ? routes.split("\n").map(line => {
+          const color = line.includes("via") ? "#30d158" : "#8e8e93";
+          return '<span style="color:' + color + '">' + line + '</span>';
+        }).join("\n")
+      : '<span style="color:#636366">' + (error || "No routes yet") + '</span>';
+
+    card.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+        <h3 class="card-title">${ns}</h3>
+        <div style="display:flex;gap:8px;margin-top:4px">${aodvBadge} ${nfqBadge}</div>
+      </div>
+      <p class="caption" style="margin-bottom:6px">
+        ${ips.length ? ips.join(" | ") : "no IPs yet"}
+      </p>
+      <p class="caption" style="margin-bottom:10px;font-size:10px;opacity:.6">
+        ${ifaceStr}
+      </p>
+      <div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.08em">
+        Kernel routing table
+      </div>
+      <div class="code-block" style="font-size:11px">${routeLines}</div>
+    `;
   });
 
-  // Placeholder when no nodes exist
   if (nsKeys.length === 0) {
     grid.innerHTML = `<p style="color:#888;grid-column:1/-1">No nodes yet. Add nodes and links first.</p>`;
   }
@@ -419,9 +456,31 @@ async function apiPing() {
 }
 
 async function apiCleanup() {
-  if (!confirm("This will destroy ALL namespaces and stop all daemons. Continue?")) return;
+  // Use a custom in-page confirmation instead of browser confirm()
+  // which may be blocked in some browser contexts
+  const btn = document.getElementById("btn-cleanup");
+  if (!btn) return;
+
+  if (btn.dataset.confirming !== "1") {
+    btn.dataset.confirming = "1";
+    btn.textContent = "✕ Click again to confirm";
+    btn.style.background = "rgba(255,59,48,0.2)";
+    setTimeout(() => {
+      btn.dataset.confirming = "";
+      btn.textContent = "✕ Cleanup All";
+      btn.style.background = "";
+    }, 3000);
+    return;
+  }
+
+  // Second click — proceed
+  btn.dataset.confirming = "";
+  btn.textContent = "✕ Cleanup All";
+  btn.style.background = "";
+
   const data = await apiFetch("/api/cleanup");
   if (!data.ok) logSystem("Cleanup failed.", "error");
+  else logSystem("Cleanup complete.", "info");
 }
 
 // ---------------------------------------------------------------------------
@@ -451,6 +510,111 @@ socket.on("topology_update", (data) => {
  */
 socket.on("log", ({ ns, level, msg }) => {
   appendLog(ns || "system", msg, level || "info");
+});
+
+// ---------------------------------------------------------------------------
+// AODV Event Timeline
+// ---------------------------------------------------------------------------
+
+let eventCount   = 0;
+let eventPaused  = false;
+const hiddenTypes = new Set();  // types toggled off by legend clicks
+
+// Node color map — sync with vis-network node colors
+const NODE_COLORS = [
+  "#ff9f0a","#30d158","#0071e3","#ff3b30",
+  "#bf5af2","#64d2ff","#ffd60a","#ff6961",
+];
+const nodeColorMap = {};
+function nodeColor(ns) {
+  if (!nodeColorMap[ns]) {
+    const idx = Object.keys(nodeColorMap).length % NODE_COLORS.length;
+    nodeColorMap[ns] = NODE_COLORS[idx];
+  }
+  return nodeColorMap[ns];
+}
+
+const TYPE_LABEL = {
+  rreq_send:       "RREQ ↗",
+  rreq_recv:       "RREQ ↙",
+  rreq_forward:    "RREQ ⇒",
+  rreq_dup:        "RREQ ✕ dup",
+  rrep_send:       "RREP ↗",
+  rrep_recv:       "RREP ↙",
+  rrep_forward:    "RREP ⇒",
+  rerr_send:       "RERR ↗",
+  rerr_recv:       "RERR ↙",
+  hello_send:      "HELLO ♡",
+  route_add:       "ROUTE +",
+  route_expire:    "ROUTE ✕",
+  nfqueue_verdict: "NFQUEUE ✓",
+};
+
+function appendEvent(ev) {
+  if (eventPaused) return;
+  if (hiddenTypes.has(ev.type)) return;
+
+  const feed = document.getElementById("event-feed");
+  if (!feed) return;
+
+  // Remove placeholder if present
+  feed.querySelector(".placeholder")?.remove();
+
+  const row = document.createElement("div");
+  row.className = `ev-item ev-${ev.type}`;
+  row.dataset.type = ev.type;
+
+  const color = nodeColor(ev.node);
+  const label = TYPE_LABEL[ev.type] || ev.type;
+
+  row.innerHTML = `
+    <span class="ev-ts">${ev.ts || ""}</span>
+    <span class="ev-node" style="color:${color}">${ev.node}</span>
+    <span class="ev-msg"><strong style="opacity:.6;font-size:10px;margin-right:6px">${label}</strong>${ev.msg}</span>
+  `;
+
+  feed.appendChild(row);
+  feed.scrollTop = feed.scrollHeight;
+
+  // Cap at 300 rows
+  eventCount++;
+  document.getElementById("event-count").textContent = `${eventCount} events`;
+  while (feed.children.length > 300) feed.removeChild(feed.firstChild);
+}
+
+socket.on("aodv_event", (ev) => {
+  appendEvent(ev);
+});
+
+// Wire legend toggle buttons
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll(".ev-legend").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const t = btn.dataset.type;
+      if (hiddenTypes.has(t)) {
+        hiddenTypes.delete(t);
+        btn.classList.remove("muted");
+      } else {
+        hiddenTypes.add(t);
+        btn.classList.add("muted");
+      }
+    });
+  });
+
+  document.getElementById("btn-clear-events")?.addEventListener("click", () => {
+    const feed = document.getElementById("event-feed");
+    if (feed) {
+      feed.innerHTML = `<p class="placeholder">Cleared. Waiting for events...</p>`;
+      eventCount = 0;
+      document.getElementById("event-count").textContent = "0 events";
+    }
+  });
+
+  document.getElementById("btn-pause-events")?.addEventListener("click", function() {
+    eventPaused = !eventPaused;
+    this.textContent = eventPaused ? "▶ Resume" : "⏸ Pause";
+    this.style.color = eventPaused ? "var(--accent2)" : "";
+  });
 });
 
 // ---------------------------------------------------------------------------
