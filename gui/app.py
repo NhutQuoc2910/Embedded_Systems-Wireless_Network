@@ -329,6 +329,14 @@ def _start_aodvd(ns: str) -> bool:
     run_cmd("pkill -9 -f aodvd", netns=ns)
     import time; time.sleep(0.3)
 
+    # Xóa default route cũ nếu có (tránh conflict)
+    run_cmd("ip route del 10.0.0.0/8 2>/dev/null || true", netns=ns)
+    # Thêm catch-all route cho toàn bộ 10.x.x.x
+    # Kernel sẽ forward thay vì reject → packet vào NFQUEUE → AODV xử lý
+    first_iface = ifaces[0]
+    run_cmd(f"ip route add 10.0.0.0/8 dev {first_iface} metric 200", netns=ns)
+    emit_log(f"Added catch-all route 10.0.0.0/8 via {first_iface}", "info", ns)
+
     with aodvd_lock:
         if ns in aodvd_procs and aodvd_procs[ns].poll() is None:
             emit_log(f"Restarting aodvd on {ns} with updated ifaces.", "info", ns)
