@@ -205,13 +205,15 @@ def _create_veth_link(src_ns: str, dst_ns: str,
             emit_log(f"veth error: {err}", "error", "system")
             return False
 
+    # Tính subnet từ IP (vd: 10.0.2.1 → 10.0.2.0/24)
+    subnet_s = ".".join(ip_s.split(".")[:3]) + ".0/24"
+    subnet_d = ".".join(ip_d.split(".")[:3]) + ".0/24"
+
     run_cmd(f"ip addr add {ip_s}/24 dev {veth_s}", netns=src_ns)
     run_cmd(f"ip link set {veth_s} up",             netns=src_ns)
-    run_cmd(f"ip route add default dev {veth_s}",   netns=src_ns)
 
     run_cmd(f"ip addr add {ip_d}/24 dev {veth_d}", netns=dst_ns)
     run_cmd(f"ip link set {veth_d} up",             netns=dst_ns)
-    run_cmd(f"ip route add default dev {veth_d}",   netns=dst_ns)
 
     emit_log(
         f"Link created: {src_ns}({ip_s}) ↔ {dst_ns}({ip_d})"
