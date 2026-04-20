@@ -716,7 +716,8 @@ def do_ping():
 
     def _run():
         out, err, rc = run_cmd(f"ping -c {count} -W 2 {dst}", netns=src)
-        text  = out if rc == 0 else err
+        # ping có thể in ra stdout kể cả khi rớt mạng (ví dụ 100% packet loss)
+        text = out if rc == 0 else (err if err.strip() else out)
         level = "info" if rc == 0 else "error"
         for line in text.splitlines():
             socketio.emit("log", {"ns": src, "level": level, "msg": line})
