@@ -330,7 +330,8 @@ def _start_aodvd(ns: str) -> bool:
     import time; time.sleep(0.3)
 
     # Xóa default route cũ nếu có (tránh conflict)
-    run_cmd("ip route del 10.0.0.0/8 2>/dev/null || true", netns=ns)
+    run_cmd("ip route del 10.0.0.0/8", netns=ns) # ignore errors internally if it fails
+
     # Thêm catch-all route cho toàn bộ 10.x.x.x
     # Kernel sẽ forward thay vì reject → packet vào NFQUEUE → AODV xử lý
     first_iface = ifaces[0]
