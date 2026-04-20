@@ -20,8 +20,14 @@ import subprocess
 import threading
 import shlex
 import re
+import os
+from typing import Dict, List, Tuple
 from flask import Flask, request, jsonify, send_from_directory
 from flask_socketio import SocketIO, emit
+
+# Absolute path to aodvd binary — lives one level above gui/
+BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
+AODVD_BIN = os.path.normpath(os.path.join(BASE_DIR, "..", "aodvd"))
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -56,7 +62,7 @@ topology = {
     "links": [],
 }
 
-aodvd_procs: dict[str, subprocess.Popen] = {}
+aodvd_procs: Dict[str, subprocess.Popen] = {}
 aodvd_lock  = threading.Lock()
 
 # Global link counter — monotonically increasing, never reused.
@@ -69,7 +75,7 @@ _link_counter_lock = threading.Lock()
 # Helpers
 # ---------------------------------------------------------------------------
 
-def run_cmd(cmd: str, netns: str = None) -> tuple[str, str, int]:
+def run_cmd(cmd: str, netns: str = None) -> Tuple[str, str, int]:
     """Execute a shell command, optionally inside a network namespace."""
     if netns:
         cmd = f"ip netns exec {netns} {cmd}"
@@ -104,7 +110,7 @@ def _next_link_index() -> int:
     return idx
 
 
-def _link_ips(index: int) -> tuple[str, str]:
+def _link_ips(index: int) -> Tuple[str, str]:
     """
     Allocate a unique /24 subnet for link number `index`.
     index 0  → 10.0.1.1 / 10.0.1.2
@@ -116,7 +122,7 @@ def _link_ips(index: int) -> tuple[str, str]:
     return f"10.{high}.{low}.1", f"10.{high}.{low}.2"
 
 
-def _veth_names(src: str, dst: str, index: int) -> tuple[str, str]:
+def _veth_names(src: str, dst: str, index: int) -> Tuple[str, str]:
     """
     Generate unique, deterministic veth names.
     Include index so the same pair can be re-linked after deletion.
@@ -132,7 +138,7 @@ def _ns_exists(ns: str) -> bool:
     return any(line.split()[0] == ns for line in out.splitlines() if line.strip())
 
 
-def _get_node_ifaces(ns: str) -> list[str]:
+def _get_node_ifaces(ns: str) -> List[str]:
     """Return all non-loopback interface names inside a namespace."""
     out, _, _ = run_cmd("ip -o link show", netns=ns)
     ifaces = []
@@ -144,10 +150,16 @@ def _get_node_ifaces(ns: str) -> list[str]:
 
 
 def _build_topology_event() -> dict:
+    live_ns = set()
+    out, _, _ = run_cmd("ip netns list")
+    for line in out.splitlines():
+        if line.strip():
+            live_ns.add(line.split()[0])
     nodes_out = []
     for name, meta in topology["nodes"].items():
         nodes_out.append({
             **meta,
+            "alive": name in live_ns,
             "aodvd": name in aodvd_procs and aodvd_procs[name].poll() is None,
         })
     return {"nodes": nodes_out, "links": list(topology["links"])}
@@ -235,6 +247,50 @@ def _configure_nfqueue(ns: str):
 # aodvd process management
 # ---------------------------------------------------------------------------
 
+def _parse_aodv_event(ns: str, line: str):
+    """
+    Parse an aodvd log line and emit a structured aodv_event if recognized.
+    Events: rreq_send, rreq_recv, rreq_forward, rreq_dup,
+            rrep_send, rrep_recv, rrep_forward,
+            rerr_send, rerr_recv,
+            hello_send, route_add, route_expire
+    """
+    low = line.lower()
+    event = None
+
+    if "sending rreq" in low or "rreq to" in low:
+        event = {"type": "rreq_send", "node": ns, "msg": line.strip()}
+    elif "received rreq" in low or "rreq from" in low:
+        event = {"type": "rreq_recv", "node": ns, "msg": line.strip()}
+    elif "forwarding rreq" in low or "forward rreq" in low:
+        event = {"type": "rreq_forward", "node": ns, "msg": line.strip()}
+    elif "duplicate rreq" in low or "already processed" in low:
+        event = {"type": "rreq_dup", "node": ns, "msg": line.strip()}
+    elif "sending rrep" in low or "rrep to" in low:
+        event = {"type": "rrep_send", "node": ns, "msg": line.strip()}
+    elif "received rrep" in low or "rrep from" in low:
+        event = {"type": "rrep_recv", "node": ns, "msg": line.strip()}
+    elif "forwarding rrep" in low or "forward rrep" in low:
+        event = {"type": "rrep_forward", "node": ns, "msg": line.strip()}
+    elif "sending rerr" in low or "rerr" in low and "send" in low:
+        event = {"type": "rerr_send", "node": ns, "msg": line.strip()}
+    elif "received rerr" in low or "rerr" in low and "recv" in low:
+        event = {"type": "rerr_recv", "node": ns, "msg": line.strip()}
+    elif "hello" in low and ("send" in low or "start" in low):
+        event = {"type": "hello_send", "node": ns, "msg": line.strip()}
+    elif "adding route" in low or "route add" in low or "new route" in low:
+        event = {"type": "route_add", "node": ns, "msg": line.strip()}
+    elif "route timeout" in low or "expire" in low or "invalid" in low:
+        event = {"type": "route_expire", "node": ns, "msg": line.strip()}
+    elif "nfqueue" in low or "verdict" in low or "nf_accept" in low:
+        event = {"type": "nfqueue_verdict", "node": ns, "msg": line.strip()}
+
+    if event:
+        import time
+        event["ts"] = time.strftime("%H:%M:%S")
+        socketio.emit("aodv_event", event)
+
+
 def _stream_aodvd(ns: str, proc: subprocess.Popen):
     """Background thread: forward every aodvd output line to WebSocket clients."""
     try:
@@ -250,6 +306,8 @@ def _stream_aodvd(ns: str, proc: subprocess.Popen):
             )
             # Tag with namespace so frontend puts it in the right tab
             socketio.emit("log", {"ns": ns, "level": level, "msg": line})
+            # Also parse for structured AODV events
+            _parse_aodv_event(ns, line)
         proc.wait()
         emit_log(f"aodvd exited (rc={proc.returncode}).", "warn", ns)
     except Exception as exc:
@@ -262,13 +320,22 @@ def _start_aodvd(ns: str) -> bool:
         emit_log("No interfaces — attach at least one link first.", "error", ns)
         return False
 
+    # Kill any stale aodvd in this namespace before starting fresh
+    run_cmd("pkill -9 -f aodvd", netns=ns)
+    import time; time.sleep(0.3)
+
     with aodvd_lock:
         if ns in aodvd_procs and aodvd_procs[ns].poll() is None:
-            emit_log("aodvd already running.", "warn", ns)
-            return True
+            emit_log(f"Restarting aodvd on {ns} with updated ifaces.", "info", ns)
+            old_proc = aodvd_procs.pop(ns)
+            old_proc.terminate()
+            try:
+                old_proc.wait(timeout=2)
+            except Exception:
+                old_proc.kill()
 
         iface_arg = ",".join(ifaces)
-        cmd = shlex.split(f"ip netns exec {ns} ./aodvd -l -i {iface_arg}")
+        cmd = shlex.split(f"ip netns exec {ns} {AODVD_BIN} -l -D -i {iface_arg}")
         try:
             proc = subprocess.Popen(
                 cmd,
@@ -310,10 +377,6 @@ def _stop_aodvd(ns: str):
 @app.route("/")
 def index():
     return send_from_directory("static", "index.html")
-
-@app.route("/static/<path:path>")
-def static_files(path):
-    return send_from_directory("static", path)
 
 
 # ---------------------------------------------------------------------------
@@ -376,6 +439,16 @@ def add_node():
     topology["nodes"][ns] = {"name": ns, "ips": []}
 
     emit_log(f"Node {ns} added (no links yet).", "info", ns)
+
+    # Auto-start aodvd on new node if other nodes already have it running
+    any_running = any(
+        p.poll() is None for p in aodvd_procs.values()
+    )
+    already_running = ns in aodvd_procs and aodvd_procs[ns].poll() is None
+    if any_running and not already_running:
+        emit_log(f"Auto-starting aodvd on {ns} (other daemons are running).", "info", ns)
+        _start_aodvd(ns)
+
     socketio.emit("topology_update", _build_topology_event())
     return jsonify({"ok": True, "node": ns})
 
@@ -462,6 +535,12 @@ def add_link():
     })
     topology["nodes"][src]["ips"].append(ip_s)
     topology["nodes"][dst]["ips"].append(ip_d)
+
+    # Restart aodvd on both nodes if running — iface list has changed
+    for _ns in [src, dst]:
+        if _ns in aodvd_procs and aodvd_procs[_ns].poll() is None:
+            emit_log(f"Link added — restarting aodvd on {_ns} with new ifaces.", "info", _ns)
+            _start_aodvd(_ns)
 
     socketio.emit("topology_update", _build_topology_event())
     return jsonify({"ok": True, "link_id": link_id, "ip_src": ip_s, "ip_dst": ip_d})
@@ -564,17 +643,36 @@ def stop_aodv():
 def get_routing():
     """
     Return routing tables for all current nodes (or one via ?ns=ns-A).
-    The frontend generates one card per entry in the response — no hardcoding.
+    Returns both kernel routes (ip route show) and NFQUEUE/iptables state
+    so the frontend can show the full AODV picture.
     """
     target = request.args.get("ns")
     nodes  = [target] if target else list(topology["nodes"].keys())
     tables = {}
     for ns in nodes:
-        out, err, rc = run_cmd("ip route show", netns=ns)
+        # 1. Kernel routing table (routes learned via AODV rtnetlink)
+        kr_out, kr_err, kr_rc = run_cmd("ip route show", netns=ns)
+
+        # 2. NFQUEUE iptables rules — proof that our solution is active
+        nfq_out, _, _ = run_cmd("iptables -L OUTPUT -n --line-numbers", netns=ns)
+        nfq_fwd, _, _ = run_cmd("iptables -L FORWARD -n --line-numbers", netns=ns)
+        nfqueue_active = "NFQUEUE" in nfq_out or "NFQUEUE" in nfq_fwd
+
+        # 3. Interface list with state
+        iface_out, _, _ = run_cmd("ip -o link show", netns=ns)
+        ifaces = []
+        for line in iface_out.splitlines():
+            m = re.match(r"\d+:\s+(\S+?)[@:].*state\s+(\S+)", line)
+            if m and m.group(1) != "lo":
+                ifaces.append(f"{m.group(1)} [{m.group(2)}]")
+
         tables[ns] = {
-            "routes": out if rc == 0 else "",
-            "error":  err if rc != 0 else "",
-            "ips":    topology["nodes"].get(ns, {}).get("ips", []),
+            "routes":         kr_out if kr_rc == 0 else "",
+            "error":          kr_err if kr_rc != 0 else "",
+            "ips":            topology["nodes"].get(ns, {}).get("ips", []),
+            "nfqueue_active": nfqueue_active,
+            "ifaces":         ifaces,
+            "aodvd_running":  ns in aodvd_procs and aodvd_procs[ns].poll() is None,
         }
     return jsonify(tables)
 
