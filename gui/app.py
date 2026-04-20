@@ -350,8 +350,9 @@ def _start_aodvd(ns: str) -> bool:
         )
         time.sleep(0.4)
 
+        # Force line-buffering using stdbuf so aodvd logs flush immediately to python pipeline
         iface_arg = ",".join(ifaces)
-        cmd = shlex.split(f"ip netns exec {ns} {AODVD_BIN} -l -D -i {iface_arg}")
+        cmd = shlex.split(f"ip netns exec {ns} stdbuf -oL -eL {AODVD_BIN} -D -i {iface_arg}")
         try:
             proc = subprocess.Popen(
                 cmd,
@@ -360,7 +361,7 @@ def _start_aodvd(ns: str) -> bool:
                 text=True,
                 bufsize=1,
             )
-        except FileNotFoundError:
+        except Exception as e:
             emit_log("aodvd binary not found — run 'make aodvd' first.", "error", ns)
             return False
 
