@@ -356,10 +356,27 @@ def _start_aodvd(ns: str) -> bool:
 
         # Force line-buffering using stdbuf so aodvd logs flush immediately to python pipeline
         iface_arg = ",".join(ifaces)
-        cmd = shlex.split(f"ip netns exec {ns} stdbuf -oL -eL {AODVD_BIN} -D -r 1 -i {iface_arg}")
+
+        # --- Per-namespace rtlog isolation ---
+        # Network namespaces share the filesystem, so all aodvd instances
+        # would write to the same /var/log/aodvd.rtlog.  We fix this by:
+        #   1. Creating a per-ns file: /tmp/aodvd-{ns}.rtlog
+        #   2. Using unshare --mount to give aodvd its own mount namespace
+        #   3. Bind-mounting the per-ns file over /var/log/aodvd.rtlog
+        rtlog_path = f"/tmp/aodvd-{ns}.rtlog"
+        # Ensure the per-ns file and target exist
+        for p in [rtlog_path, "/var/log/aodvd.rtlog"]:
+            subprocess.run(["touch", p], capture_output=True)
+
+        shell_cmd = (
+            f"ip netns exec {ns} unshare --mount -- bash -c '"
+            f"mount --bind {rtlog_path} /var/log/aodvd.rtlog && "
+            f"exec stdbuf -oL -eL {AODVD_BIN} -D -r 1 -i {iface_arg}'"
+        )
         try:
             proc = subprocess.Popen(
-                cmd,
+                shell_cmd,
+                shell=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -387,6 +404,7 @@ def _stop_aodvd(ns: str):
         emit_log("aodvd stopped.", "info", ns)
     else:
         emit_log("No running aodvd to stop.", "warn", ns)
+    # Note: keep /tmp/aodvd-{ns}.rtlog so it can still be read after stop
 
 
 # ---------------------------------------------------------------------------
@@ -691,14 +709,41 @@ def _parse_aodv_rtlog(ns: str) -> dict:
     """
     Read and parse /var/log/aodvd.rtlog inside a namespace.
     Returns a dict with metadata and a list of route entries.
-    
-    The rtlog format (written by aodvd's print_rt_table):
+
+    The rtlog format (written by aodvd's print_rt_table in debug.c):
         # Time: HH:MM:SS.mmm IP: x.x.x.x seqno: N entries/active: N/N
         Destination     Next hop        HC  St. Seqno Expire Flags Iface Precursors
         10.0.1.2        10.0.1.2        1   VAL 5     2894   ---   veth0 10.0.2.1
+
+    IMPORTANT: rt_flags_to_str() returns "" when flags==0, so the %-5s
+    format produces 5 spaces that split() silently absorbs.  We must
+    parse by FIXED COLUMN POSITIONS derived from the sprintf widths:
+
+        Col 0..14  (15) Destination   %-15s
+        Col 16..30 (15) Next hop      %-15s  (1 space gap)
+        Col 32..34 (3)  HC            %-3d   (1 space gap)
+        Col 36..38 (3)  St.           %-3s   (1 space gap)
+        Col 40..44 (5)  Seqno         %-5s   (1 space gap)
+        Col 46..51 (6)  Expire        %-6lu  (1 space gap)
+        Col 53..57 (5)  Flags         %-5s   (1 space gap)
+        Col 59..63 (5)  Iface         %-5s   (1 space gap)
+        Col 65..   (*)  Precursors    %-15s  (optional)
+
+    We use a hybrid approach: try fixed-position first, fall back to
+    split-based parsing for robustness.
     """
-    out, err, rc = run_cmd("cat /var/log/aodvd.rtlog", netns=ns)
-    
+    # Read the per-namespace rtlog file directly (not via ip netns exec,
+    # since the filesystem is shared and we use per-ns files in /tmp).
+    rtlog_path = f"/tmp/aodvd-{ns}.rtlog"
+    try:
+        with open(rtlog_path, "r") as f:
+            out = f.read().strip()
+        err, rc = "", 0
+    except FileNotFoundError:
+        out, err, rc = "", "rtlog not found (aodvd not started with -r?)", 1
+    except Exception as e:
+        out, err, rc = "", str(e), 1
+
     result = {
         "timestamp": "",
         "host_ip": "",
@@ -709,12 +754,12 @@ def _parse_aodv_rtlog(ns: str) -> dict:
         "raw": out if rc == 0 else "",
         "error": err if rc != 0 else "",
     }
-    
+
     if rc != 0 or not out.strip():
         return result
-    
+
     lines = out.strip().splitlines()
-    
+
     # Find the LAST complete block (aodvd appends to file, we want freshest)
     # Blocks start with "# Time: ..."
     last_header_idx = -1
@@ -722,10 +767,10 @@ def _parse_aodv_rtlog(ns: str) -> dict:
         if lines[i].startswith("# Time:"):
             last_header_idx = i
             break
-    
+
     if last_header_idx == -1:
         return result
-    
+
     # Parse header: # Time: HH:MM:SS.mmm IP: x.x.x.x seqno: N entries/active: N/N
     header = lines[last_header_idx]
     hm = re.match(
@@ -738,10 +783,33 @@ def _parse_aodv_rtlog(ns: str) -> dict:
         result["host_seqno"] = int(hm.group(3))
         result["entries"]   = int(hm.group(4))
         result["active"]    = int(hm.group(5))
-    
-    # Skip the column header line (Destination  Next hop  HC ...)
+
+    # --- Detect column positions from the header line -----------------
+    # The line right after "# Time:" is the column header:
+    #   "Destination     Next hop        HC  St. Seqno Expire Flags Iface Precursors"
+    # We parse its positions to handle any minor format variations.
+    col_header_idx = last_header_idx + 1
+    col_positions = None
+    if col_header_idx < len(lines):
+        ch = lines[col_header_idx]
+        # Find start positions of each known column keyword
+        col_keywords = [
+            "Destination", "Next hop", "HC", "St.", "Seqno",
+            "Expire", "Flags", "Iface", "Precursors",
+        ]
+        positions = []
+        for kw in col_keywords:
+            idx = ch.find(kw)
+            if idx >= 0:
+                positions.append(idx)
+            else:
+                positions.append(None)
+        # Only use fixed-position parsing if at least the first 8 columns found
+        if all(p is not None for p in positions[:8]):
+            col_positions = positions
+
     data_start = last_header_idx + 2
-    
+
     current_route = None
     for line in lines[data_start:]:
         stripped = line.strip()
@@ -750,41 +818,125 @@ def _parse_aodv_rtlog(ns: str) -> dict:
         # A new block header means end of current block
         if stripped.startswith("# Time:"):
             break
-        
+
         # Check if this is a precursor continuation line (heavily indented)
         # Continuation lines have lots of leading spaces followed by a single IP
         cont_match = re.match(r"^\s{20,}(\d+\.\d+\.\d+\.\d+)$", line)
         if cont_match and current_route:
             current_route["precursors"].append(cont_match.group(1))
             continue
-        
-        # Parse a route entry line
-        # Format: %-15s %-15s %-3d %-3s %-5s %-6lu %-5s %-5s [%-15s]
+
+        # --- Fixed-position parsing (preferred) ---
+        if col_positions and len(line) >= (col_positions[7] if col_positions[7] else 0):
+            try:
+                p = col_positions  # shorthand
+                dest      = line[p[0]:p[1]].strip()   if p[0] is not None else ""
+                next_hop  = line[p[1]:p[2]].strip()   if p[1] is not None else ""
+                hcnt_s    = line[p[2]:p[3]].strip()   if p[2] is not None else "0"
+                state     = line[p[3]:p[4]].strip()   if p[3] is not None else ""
+                seqno_s   = line[p[4]:p[5]].strip()   if p[4] is not None else "-"
+                expire_s  = line[p[5]:p[6]].strip()   if p[5] is not None else "0"
+                flags     = line[p[6]:p[7]].strip()   if p[6] is not None else ""
+                # Iface: from position[7] to position[8] (or end if no precursors col)
+                iface_end = p[8] if p[8] is not None else len(line)
+                iface     = line[p[7]:iface_end].strip() if p[7] is not None else ""
+                # Precursors: everything after position[8]
+                prec_str  = line[p[8]:].strip() if p[8] is not None and p[8] < len(line) else ""
+
+                if not dest or not re.match(r"\d+\.\d+\.\d+\.\d+", dest):
+                    # Not a valid route line — skip
+                    continue
+
+                route = {
+                    "destination": dest,
+                    "next_hop":    next_hop,
+                    "hop_count":   int(hcnt_s) if hcnt_s.isdigit() else 0,
+                    "state":       state,
+                    "dest_seqno":  seqno_s if seqno_s else "-",
+                    "lifetime":    int(expire_s) if expire_s.lstrip("-").isdigit() else 0,
+                    "flags":       flags,
+                    "interface":   iface,
+                    "precursors":  [],
+                }
+                if prec_str:
+                    # First precursor on this line
+                    prec_ip = prec_str.split()[0] if prec_str.split() else ""
+                    if prec_ip and re.match(r"\d+\.\d+\.\d+\.\d+", prec_ip):
+                        route["precursors"].append(prec_ip)
+
+                result["routes"].append(route)
+                current_route = route
+                continue
+            except (ValueError, IndexError):
+                pass  # Fall through to split-based parsing
+
+        # --- Fallback: split-based parsing ---
         parts = stripped.split()
-        if len(parts) < 8:
+        if len(parts) < 6:
             continue
-        
+
         try:
+            # With empty flags, split() gives fewer columns.
+            # Detect by checking if parts look like: dest next hc st seq exp [flags] iface [prec...]
+            # Flags field is alphabetic (U/R/I/G or "---") vs iface which starts with v/lo/eth
+            # We scan from parts[6] onward to find the interface name
+            dest      = parts[0]
+            next_hop  = parts[1]
+            hop_count = int(parts[2])
+            state     = parts[3]
+            dest_seq  = parts[4]
+            lifetime  = int(parts[5])
+
+            # Remaining parts after the first 6 fixed fields
+            rest = parts[6:]
+
+            flags = ""
+            iface = ""
+            precursors = []
+
+            # Heuristic: scan rest[] to classify each token
+            # - A token that looks like an interface name (starts with letter, not an IP)
+            # - A token that matches IP pattern → precursor
+            # - A token like "---", "U", "R", "UR", etc. → flags
+            iface_found = False
+            for token in rest:
+                if re.match(r"\d+\.\d+\.\d+\.\d+$", token):
+                    # IP address → precursor
+                    precursors.append(token)
+                elif not iface_found and re.match(r"^[a-zA-Z]", token):
+                    # First alphabetic non-IP token
+                    # Could be flags (U, R, UR, URI) or iface (vAB0s, eth0)
+                    # Flags are typically short uppercase: U, R, UR, URI, G, ---
+                    if re.match(r"^[URIGurg\-]{1,5}$", token):
+                        flags = token
+                    else:
+                        iface = token
+                        iface_found = True
+                elif iface_found:
+                    # After iface, remaining tokens are precursors
+                    if re.match(r"\d+\.\d+\.\d+\.\d+$", token):
+                        precursors.append(token)
+                else:
+                    # Unknown token after flags — likely iface
+                    iface = token
+                    iface_found = True
+
             route = {
-                "destination": parts[0],
-                "next_hop":    parts[1],
-                "hop_count":   int(parts[2]),
-                "state":       parts[3],  # VAL or INV
-                "dest_seqno":  parts[4],
-                "lifetime":    int(parts[5]),
-                "flags":       parts[6],
-                "interface":   parts[7],
-                "precursors":  [],
+                "destination": dest,
+                "next_hop":    next_hop,
+                "hop_count":   hop_count,
+                "state":       state,
+                "dest_seqno":  dest_seq,
+                "lifetime":    lifetime,
+                "flags":       flags,
+                "interface":   iface,
+                "precursors":  precursors,
             }
-            # If there's a 9th field, it's the first precursor
-            if len(parts) >= 9:
-                route["precursors"].append(parts[8])
-            
             result["routes"].append(route)
             current_route = route
         except (ValueError, IndexError):
             continue
-    
+
     return result
 
 
@@ -860,6 +1012,12 @@ def cleanup():
 
     for ns in list(topology["nodes"].keys()):
         _delete_namespace(ns)
+        # Clean up per-namespace rtlog files
+        rtlog_path = f"/tmp/aodvd-{ns}.rtlog"
+        try:
+            os.remove(rtlog_path)
+        except OSError:
+            pass
 
     topology["nodes"].clear()
     topology["links"].clear()
