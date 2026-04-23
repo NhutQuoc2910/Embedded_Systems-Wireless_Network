@@ -29,7 +29,7 @@ iptables -A FORWARD -j NFQUEUE --queue-num 0
 
 # 4. Dynamically detect network interfaces
 # Find all interfaces except loopback that have an IPv4 address assigned
-INTERFACES=$(ip -o link show | awk -F': ' '{print $2}' | grep -v lo)
+INTERFACES=$(ip -o link show | awk -F': ' '{print $2}' | cut -d'@' -f1 | grep -v lo)
 
 AODV_ARGS=""
 for iface in $INTERFACES; do
