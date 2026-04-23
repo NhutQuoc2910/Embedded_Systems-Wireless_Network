@@ -36,9 +36,10 @@ for iface in $INTERFACES; do
     # Only bind to interfaces that have an IPv4 address
     if ip -4 addr show "$iface" | grep -q 'inet '; then
         AODV_ARGS="$AODV_ARGS -i $iface"
-        ip route add 10.1.0.0/16 dev $iface 2>/dev/null || true
     fi
 done
+
+ip route add default dev eth0 2>/dev/null || true
 
 echo "[*] Detected Interfaces: $AODV_ARGS"
 echo "[*] Starting aodvd: /aodv/aodvd $AODV_ARGS -l"
