@@ -66,8 +66,7 @@ struct rt_table {
 #define RT_UNIDIR        0x1
 #define RT_REPAIR        0x2
 #define RT_INV_SEQNO     0x4
-#define RT_INET_DEST     0x8	/* Mark for Internet destinations (to be relayed
-				 * through a Internet gateway. */
+#define RT_INET_DEST     0x8	/* Mark for Internet destinations (to be relayed through a Internet gateway. */
 #define RT_GATEWAY       0x10
 
 /* Route entry states */
@@ -81,7 +80,7 @@ struct rt_table {
 struct routing_table {
     unsigned int num_entries;
     unsigned int num_active;
-    list_t tbl[RT_TABLESIZE];
+    list_t tbl[RT_TABLESIZE]; /* 64-slot hash table */
 };
 
 void precursor_list_destroy(rt_table_t * rt);

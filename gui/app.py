@@ -16,11 +16,15 @@ Requirements:
     pip install flask flask-socketio eventlet
 """
 
+import eventlet
+eventlet.monkey_patch()
+
 import subprocess
 import threading
 import shlex
 import re
 import os
+import time as _time
 from typing import Dict, List, Tuple
 from flask import Flask, request, jsonify, send_from_directory
 from flask_socketio import SocketIO, emit
@@ -352,7 +356,7 @@ def _start_aodvd(ns: str) -> bool:
 
         # Force line-buffering using stdbuf so aodvd logs flush immediately to python pipeline
         iface_arg = ",".join(ifaces)
-        cmd = shlex.split(f"ip netns exec {ns} stdbuf -oL -eL {AODVD_BIN} -D -i {iface_arg}")
+        cmd = shlex.split(f"ip netns exec {ns} stdbuf -oL -eL {AODVD_BIN} -D -r 1 -i {iface_arg}")
         try:
             proc = subprocess.Popen(
                 cmd,
@@ -676,6 +680,125 @@ def get_routing():
             "ifaces":         ifaces,
             "aodvd_running":  ns in aodvd_procs and aodvd_procs[ns].poll() is None,
         }
+    return jsonify(tables)
+
+
+# ---------------------------------------------------------------------------
+# AODV routing table log parser
+# ---------------------------------------------------------------------------
+
+def _parse_aodv_rtlog(ns: str) -> dict:
+    """
+    Read and parse /var/log/aodvd.rtlog inside a namespace.
+    Returns a dict with metadata and a list of route entries.
+    
+    The rtlog format (written by aodvd's print_rt_table):
+        # Time: HH:MM:SS.mmm IP: x.x.x.x seqno: N entries/active: N/N
+        Destination     Next hop        HC  St. Seqno Expire Flags Iface Precursors
+        10.0.1.2        10.0.1.2        1   VAL 5     2894   ---   veth0 10.0.2.1
+    """
+    out, err, rc = run_cmd("cat /var/log/aodvd.rtlog", netns=ns)
+    
+    result = {
+        "timestamp": "",
+        "host_ip": "",
+        "host_seqno": 0,
+        "entries": 0,
+        "active": 0,
+        "routes": [],
+        "raw": out if rc == 0 else "",
+        "error": err if rc != 0 else "",
+    }
+    
+    if rc != 0 or not out.strip():
+        return result
+    
+    lines = out.strip().splitlines()
+    
+    # Find the LAST complete block (aodvd appends to file, we want freshest)
+    # Blocks start with "# Time: ..."
+    last_header_idx = -1
+    for i in range(len(lines) - 1, -1, -1):
+        if lines[i].startswith("# Time:"):
+            last_header_idx = i
+            break
+    
+    if last_header_idx == -1:
+        return result
+    
+    # Parse header: # Time: HH:MM:SS.mmm IP: x.x.x.x seqno: N entries/active: N/N
+    header = lines[last_header_idx]
+    hm = re.match(
+        r"# Time:\s+(\S+)\s+IP:\s+(\S+)\s+seqno:\s+(\d+)\s+entries/active:\s+(\d+)/(\d+)",
+        header,
+    )
+    if hm:
+        result["timestamp"] = hm.group(1)
+        result["host_ip"]   = hm.group(2)
+        result["host_seqno"] = int(hm.group(3))
+        result["entries"]   = int(hm.group(4))
+        result["active"]    = int(hm.group(5))
+    
+    # Skip the column header line (Destination  Next hop  HC ...)
+    data_start = last_header_idx + 2
+    
+    current_route = None
+    for line in lines[data_start:]:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        # A new block header means end of current block
+        if stripped.startswith("# Time:"):
+            break
+        
+        # Check if this is a precursor continuation line (heavily indented)
+        # Continuation lines have lots of leading spaces followed by a single IP
+        cont_match = re.match(r"^\s{20,}(\d+\.\d+\.\d+\.\d+)$", line)
+        if cont_match and current_route:
+            current_route["precursors"].append(cont_match.group(1))
+            continue
+        
+        # Parse a route entry line
+        # Format: %-15s %-15s %-3d %-3s %-5s %-6lu %-5s %-5s [%-15s]
+        parts = stripped.split()
+        if len(parts) < 8:
+            continue
+        
+        try:
+            route = {
+                "destination": parts[0],
+                "next_hop":    parts[1],
+                "hop_count":   int(parts[2]),
+                "state":       parts[3],  # VAL or INV
+                "dest_seqno":  parts[4],
+                "lifetime":    int(parts[5]),
+                "flags":       parts[6],
+                "interface":   parts[7],
+                "precursors":  [],
+            }
+            # If there's a 9th field, it's the first precursor
+            if len(parts) >= 9:
+                route["precursors"].append(parts[8])
+            
+            result["routes"].append(route)
+            current_route = route
+        except (ValueError, IndexError):
+            continue
+    
+    return result
+
+
+@app.route("/api/routing/aodv", methods=["GET"])
+def get_aodv_routing():
+    """
+    Return parsed AODV routing tables from /var/log/aodvd.rtlog
+    for all nodes (or one via ?ns=ns-A).
+    """
+    target = request.args.get("ns")
+    nodes  = [target] if target else list(topology["nodes"].keys())
+    tables = {}
+    for ns in nodes:
+        tables[ns] = _parse_aodv_rtlog(ns)
     return jsonify(tables)
 
 

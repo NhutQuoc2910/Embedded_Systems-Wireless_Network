@@ -297,24 +297,38 @@ function timestamp() {
 }
 
 // ---------------------------------------------------------------------------
-// Routing table cards — fully dynamic
+// Routing table cards — tabbed (AODV Routes + Kernel Routes)
 // ---------------------------------------------------------------------------
+
+// Track previous AODV route destinations per node to detect new routes
+const _prevAodvDests = {};   // { "ns-A": Set(["10.0.1.2", ...]) }
+let _aodvData = {};          // latest AODV route data from /api/routing/aodv
+let _kernelData = {};        // latest kernel route data from /api/routing
+const _cardActiveTab = {};   // { "ns-A": "aodv" | "kernel" }  — remembers tab per card
 
 async function refreshRoutingTables() {
   try {
-    const res  = await fetch("/api/routing");
-    const data = await res.json();
-    renderRoutingCards(data);
+    const [kernelRes, aodvRes] = await Promise.all([
+      fetch("/api/routing"),
+      fetch("/api/routing/aodv"),
+    ]);
+    _kernelData = await kernelRes.json();
+    _aodvData   = await aodvRes.json();
+    renderRoutingCards();
   } catch (e) {
     logSystem(`Routing fetch error: ${e}`, "error");
   }
 }
 
-function renderRoutingCards(tables) {
+function renderRoutingCards() {
   const grid = document.getElementById("routing-grid");
   if (!grid) return;
 
-  const nsKeys = Object.keys(tables);
+  // Merge keys from both kernel and aodv data
+  const nsKeys = [...new Set([
+    ...Object.keys(_kernelData),
+    ...Object.keys(_aodvData),
+  ])];
 
   // Remove placeholder paragraphs
   grid.querySelectorAll("p").forEach(p => p.remove());
@@ -325,13 +339,30 @@ function renderRoutingCards(tables) {
   });
 
   nsKeys.forEach(ns => {
-    const entry  = tables[ns] || {};
-    const routes = typeof entry === "object" ? (entry.routes || "") : String(entry);
-    const error  = typeof entry === "object" ? (entry.error  || "") : "";
-    const ips    = typeof entry === "object" ? (entry.ips    || []) : [];
-    const nfq    = typeof entry === "object" ? entry.nfqueue_active : false;
-    const aodvd  = typeof entry === "object" ? entry.aodvd_running  : false;
-    const ifaces = typeof entry === "object" ? (entry.ifaces || []) : [];
+    const kEntry = _kernelData[ns] || {};
+    const aEntry = _aodvData[ns]   || {};
+
+    const routes = typeof kEntry === "object" ? (kEntry.routes || "") : String(kEntry);
+    const error  = typeof kEntry === "object" ? (kEntry.error  || "") : "";
+    const ips    = typeof kEntry === "object" ? (kEntry.ips    || []) : [];
+    const nfq    = typeof kEntry === "object" ? kEntry.nfqueue_active : false;
+    const aodvd  = typeof kEntry === "object" ? kEntry.aodvd_running  : false;
+    const ifaces = typeof kEntry === "object" ? (kEntry.ifaces || []) : [];
+
+    const aodvRoutes = aEntry.routes || [];
+    const aodvTs     = aEntry.timestamp || "";
+    const validCount   = aodvRoutes.filter(r => r.state === "VAL").length;
+    const invalidCount = aodvRoutes.filter(r => r.state !== "VAL").length;
+
+    // Detect newly added routes
+    const prevDests = _prevAodvDests[ns] || new Set();
+    const currDests = new Set(aodvRoutes.map(r => r.destination));
+    const newDests  = new Set([...currDests].filter(d => !prevDests.has(d)));
+    _prevAodvDests[ns] = currDests;
+
+    // Remember which tab is active
+    if (!_cardActiveTab[ns]) _cardActiveTab[ns] = "aodv";
+    const activeTab = _cardActiveTab[ns];
 
     let card = grid.querySelector(`.card[data-ns="${ns}"]`);
     if (!card) {
@@ -349,12 +380,59 @@ function renderRoutingCards(tables) {
       ? `<span style="color:#0071e3;font-size:10px">● NFQUEUE</span>`
       : `<span style="color:#ff3b30;font-size:10px">○ NFQUEUE</span>`;
 
-    // Interface list
-    const ifaceStr = ifaces.length
-      ? ifaces.join("  ")
-      : "no interfaces";
+    // Route count badges
+    const validBadge   = validCount > 0
+      ? `<span class="route-badge valid-badge">✓ ${validCount}</span>` : "";
+    const invalidBadge = invalidCount > 0
+      ? `<span class="route-badge invalid-badge">✕ ${invalidCount}</span>` : "";
 
-    // Kernel routes — highlight AODV-learned routes (via entries)
+    // Interface list
+    const ifaceStr = ifaces.length ? ifaces.join("  ") : "no interfaces";
+
+    // ── AODV Routes table ──
+    let aodvHtml;
+    if (aodvRoutes.length === 0) {
+      aodvHtml = `<div class="aodv-empty">
+        ${aodvd ? "No AODV routes yet — trigger traffic to discover routes" : "Start aodvd to see AODV routes"}
+        ${aodvTs ? `<br><span style="font-size:10px;opacity:.5">last dump: ${aodvTs}</span>` : ""}
+      </div>`;
+    } else {
+      aodvHtml = `
+        ${aodvTs ? `<div style="font-size:9.5px;color:var(--muted);margin-bottom:6px">Last dump: ${aodvTs}</div>` : ""}
+        <div style="overflow-x:auto">
+        <table class="aodv-table">
+          <thead><tr>
+            <th>Dest</th><th>Next Hop</th><th>HC</th>
+            <th>Seq#</th><th>State</th><th>Lifetime</th>
+            <th>Iface</th><th>Precursors</th>
+          </tr></thead>
+          <tbody>
+            ${aodvRoutes.map(r => {
+              const isInvalid = r.state !== "VAL";
+              const isNew = newDests.has(r.destination);
+              const cls = isInvalid ? "route-invalid" : (isNew ? "route-new" : "");
+              const stateHtml = isInvalid
+                ? `<span class="state-val invalid">${r.state}</span>`
+                : `<span class="state-val valid">${r.state}</span>`;
+              const lifetime = r.lifetime > 0 ? `${r.lifetime}ms` : "—";
+              const prec = r.precursors.length ? r.precursors.join(", ") : "—";
+              return `<tr class="${cls}">
+                <td>${r.destination}</td>
+                <td>${r.next_hop}</td>
+                <td>${r.hop_count}</td>
+                <td>${r.dest_seqno}</td>
+                <td>${stateHtml}</td>
+                <td>${lifetime}</td>
+                <td>${r.interface}</td>
+                <td>${prec}</td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+        </div>`;
+    }
+
+    // ── Kernel routes ──
     const routeLines = routes
       ? routes.split("\n").map(line => {
           const color = line.includes("via") ? "#30d158" : "#8e8e93";
@@ -363,21 +441,38 @@ function renderRoutingCards(tables) {
       : '<span style="color:#636366">' + (error || "No routes yet") + '</span>';
 
     card.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
         <h3 class="card-title">${ns}</h3>
         <div style="display:flex;gap:8px;margin-top:4px">${aodvBadge} ${nfqBadge}</div>
       </div>
-      <p class="caption" style="margin-bottom:6px">
-        ${ips.length ? ips.join(" | ") : "no IPs yet"}
-      </p>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+        <p class="caption" style="margin:0">
+          ${ips.length ? ips.join(" | ") : "no IPs yet"}
+        </p>
+        ${validBadge}${invalidBadge}
+      </div>
       <p class="caption" style="margin-bottom:10px;font-size:10px;opacity:.6">
         ${ifaceStr}
       </p>
-      <div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.08em">
-        Kernel routing table
+      <div class="rt-tabs">
+        <button class="rt-tab ${activeTab === 'aodv' ? 'active' : ''}" data-tab="aodv" data-ns="${ns}">AODV Routes</button>
+        <button class="rt-tab ${activeTab === 'kernel' ? 'active' : ''}" data-tab="kernel" data-ns="${ns}">Kernel Routes</button>
       </div>
-      <div class="code-block" style="font-size:11px">${routeLines}</div>
+      <div class="rt-pane ${activeTab === 'aodv' ? 'active' : ''}" data-pane="aodv">${aodvHtml}</div>
+      <div class="rt-pane ${activeTab === 'kernel' ? 'active' : ''}" data-pane="kernel">
+        <div class="code-block" style="font-size:11px">${routeLines}</div>
+      </div>
     `;
+
+    // Wire tab switching
+    card.querySelectorAll(".rt-tab").forEach(tab => {
+      tab.addEventListener("click", () => {
+        const t = tab.dataset.tab;
+        _cardActiveTab[ns] = t;
+        card.querySelectorAll(".rt-tab").forEach(b => b.classList.toggle("active", b.dataset.tab === t));
+        card.querySelectorAll(".rt-pane").forEach(p => p.classList.toggle("active", p.dataset.pane === t));
+      });
+    });
   });
 
   if (nsKeys.length === 0) {

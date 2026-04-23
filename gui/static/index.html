@@ -397,6 +397,111 @@
       color: var(--accent2);
     }
 
+    /* ── Routing Card Tabs ───────────────────────────────────────── */
+    .rt-tabs {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 12px;
+    }
+    .rt-tab {
+      flex: 1;
+      padding: 7px 12px;
+      font-family: var(--mono);
+      font-size: 10.5px;
+      font-weight: 500;
+      text-align: center;
+      background: transparent;
+      color: var(--muted);
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      transition: all .15s;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    .rt-tab:hover { color: var(--text); }
+    .rt-tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+    .rt-pane { display: none; }
+    .rt-pane.active { display: block; }
+
+    /* ── AODV Route Table ────────────────────────────────────────── */
+    .aodv-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 10.5px;
+      font-family: var(--mono);
+    }
+    .aodv-table th {
+      text-align: left;
+      color: var(--muted);
+      font-weight: 500;
+      font-size: 9.5px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      padding: 5px 6px;
+      border-bottom: 1px solid var(--border2);
+      white-space: nowrap;
+    }
+    .aodv-table td {
+      padding: 4px 6px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+      white-space: nowrap;
+    }
+    .aodv-table tr:last-child td { border-bottom: none; }
+    .aodv-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+    /* State-based row highlighting */
+    .aodv-table tr.route-invalid td {
+      background: rgba(255,59,48,0.1);
+      color: var(--danger);
+    }
+    .aodv-table tr.route-new td {
+      background: rgba(48,209,88,0.15);
+      animation: routeFlash 3s ease forwards;
+    }
+    @keyframes routeFlash {
+      0%   { background: rgba(48,209,88,0.25); }
+      100% { background: transparent; }
+    }
+
+    /* State badges */
+    .state-val {
+      display: inline-block;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: .04em;
+    }
+    .state-val.valid { background: rgba(48,209,88,0.15); color: #30d158; }
+    .state-val.invalid { background: rgba(255,59,48,0.12); color: #ff3b30; }
+
+    /* Route count badges in card header */
+    .route-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 2px 7px;
+      border-radius: 10px;
+      font-size: 9.5px;
+      font-family: var(--mono);
+      font-weight: 600;
+    }
+    .route-badge.valid-badge { background: rgba(48,209,88,0.12); color: #30d158; }
+    .route-badge.invalid-badge { background: rgba(255,59,48,0.10); color: #ff3b30; }
+
+    .aodv-empty {
+      text-align: center;
+      color: var(--muted);
+      font-size: 11px;
+      padding: 20px 10px;
+    }
+
     /* ── Hint ────────────────────────────────────────────────────── */
     .hint {
       display: inline-block;
@@ -580,10 +685,10 @@
 
   <!-- ── Routing ──────────────────────────────────────────────────── -->
   <section id="routing" class="routing-section">
-    <div class="section-label">Kernel Routing Tables</div>
+    <div class="section-label">AODV Routing Intelligence</div>
     <h2 class="section-title">Routing<br>Intelligence.</h2>
     <p class="section-sub">
-      Live kernel routing tables across all namespaces · one card per node
+      RFC 3561 AODV routing tables & kernel routes · one card per node · auto-refresh on topology change
     </p>
 
     <div class="ping-row">
