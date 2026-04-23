@@ -315,16 +315,23 @@ def _stream_aodvd(ns: str, proc: subprocess.Popen):
 
 
 def _start_aodvd(ns: str) -> bool:
+    import time
     ifaces = _get_node_ifaces(ns)
     if not ifaces:
         emit_log("No interfaces — attach at least one link first.", "error", ns)
         return False
 
-    # Kill any stale aodvd in this namespace before starting fresh
-    run_cmd("pkill -9 -f aodvd", netns=ns)
-    import time; time.sleep(0.3)
-
     with aodvd_lock:
+        # Xóa default route cũ nếu có (tránh conflict)
+        run_cmd("ip route del 10.0.0.0/8", netns=ns) 
+        
+        # Thêm catch-all route cho toàn bộ 10.x.x.x
+        # Kernel sẽ đưa gói tin vào OUTPUT chain -> lọt vào NFQUEUE -> AODV chụp được
+        first_iface = ifaces[0]
+        run_cmd(f"ip route add 10.0.0.0/8 dev {first_iface} metric 200", netns=ns)
+        emit_log(f"Added catch-all route 10.0.0.0/8 via {first_iface}", "info", ns)
+
+        # Stop existing instance if running
         if ns in aodvd_procs and aodvd_procs[ns].poll() is None:
             emit_log(f"Restarting aodvd on {ns} with updated ifaces.", "info", ns)
             old_proc = aodvd_procs.pop(ns)
@@ -333,9 +340,19 @@ def _start_aodvd(ns: str) -> bool:
                 old_proc.wait(timeout=2)
             except Exception:
                 old_proc.kill()
+            time.sleep(0.3)
 
+        # Kill any stale process still holding UDP port 654
+        _ns_path = f"/var/run/netns/{ns}"
+        subprocess.run(
+            ["nsenter", "--net=" + _ns_path, "fuser", "-k", "654/udp"],
+            capture_output=True
+        )
+        time.sleep(0.4)
+
+        # Force line-buffering using stdbuf so aodvd logs flush immediately to python pipeline
         iface_arg = ",".join(ifaces)
-        cmd = shlex.split(f"ip netns exec {ns} {AODVD_BIN} -l -D -i {iface_arg}")
+        cmd = shlex.split(f"ip netns exec {ns} stdbuf -oL -eL {AODVD_BIN} -D -i {iface_arg}")
         try:
             proc = subprocess.Popen(
                 cmd,
@@ -344,14 +361,12 @@ def _start_aodvd(ns: str) -> bool:
                 text=True,
                 bufsize=1,
             )
-        except FileNotFoundError:
+        except Exception as e:
             emit_log("aodvd binary not found — run 'make aodvd' first.", "error", ns)
             return False
 
         aodvd_procs[ns] = proc
-        threading.Thread(
-            target=_stream_aodvd, args=(ns, proc), daemon=True
-        ).start()
+        socketio.start_background_task(target=_stream_aodvd, ns=ns, proc=proc)
         emit_log(f"aodvd started (pid={proc.pid}, ifaces={iface_arg}).", "info", ns)
         return True
 
@@ -440,15 +455,6 @@ def add_node():
 
     emit_log(f"Node {ns} added (no links yet).", "info", ns)
 
-    # Auto-start aodvd on new node if other nodes already have it running
-    any_running = any(
-        p.poll() is None for p in aodvd_procs.values()
-    )
-    already_running = ns in aodvd_procs and aodvd_procs[ns].poll() is None
-    if any_running and not already_running:
-        emit_log(f"Auto-starting aodvd on {ns} (other daemons are running).", "info", ns)
-        _start_aodvd(ns)
-
     socketio.emit("topology_update", _build_topology_event())
     return jsonify({"ok": True, "node": ns})
 
@@ -536,12 +542,6 @@ def add_link():
     topology["nodes"][src]["ips"].append(ip_s)
     topology["nodes"][dst]["ips"].append(ip_d)
 
-    # Restart aodvd on both nodes if running — iface list has changed
-    for _ns in [src, dst]:
-        if _ns in aodvd_procs and aodvd_procs[_ns].poll() is None:
-            emit_log(f"Link added — restarting aodvd on {_ns} with new ifaces.", "info", _ns)
-            _start_aodvd(_ns)
-
     socketio.emit("topology_update", _build_topology_event())
     return jsonify({"ok": True, "link_id": link_id, "ip_src": ip_s, "ip_dst": ip_d})
 
@@ -619,7 +619,9 @@ def start_aodv():
     """Start aodvd on all nodes (or one via ?ns=ns-A)."""
     target  = request.args.get("ns")
     nodes   = [target] if target else list(topology["nodes"].keys())
-    results = {ns: _start_aodvd(ns) for ns in nodes}
+    results = {}
+    for ns in nodes:
+        results[ns] = _start_aodvd(ns)
     socketio.emit("topology_update", _build_topology_event())
     return jsonify({"ok": True, "results": results})
 
@@ -703,12 +705,21 @@ def do_ping():
 
     def _run():
         out, err, rc = run_cmd(f"ping -c {count} -W 2 {dst}", netns=src)
-        text  = out if rc == 0 else err
-        level = "info" if rc == 0 else "error"
+        
+        # Lấy toàn bộ log từ stdout (vì ping thông báo loss vào stdout)
+        text = out if out.strip() else err
+        
         for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            level = "error" if ("unreachable" in line.lower() or "100%" in line) else "info"
             socketio.emit("log", {"ns": src, "level": level, "msg": line})
+            
+        if rc != 0 and not text.strip():
+            socketio.emit("log", {"ns": src, "level": "error", "msg": f"Ping failed with rc={rc}"})
 
-    threading.Thread(target=_run, daemon=True).start()
+    socketio.start_background_task(target=_run)
     return jsonify({"ok": True})
 
 
