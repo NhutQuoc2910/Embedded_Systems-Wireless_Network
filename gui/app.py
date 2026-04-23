@@ -618,6 +618,24 @@ def toggle_link(link_id):
     run_cmd(f"ip link set {link['veth_dst']} {action}", netns=link["dst"])
     link["up"] = not link["up"]
 
+    # --- Recovery: restore AODV infrastructure on link UP ---
+    # When a link goes DOWN, the kernel removes the catch-all route
+    # (10.0.0.0/8) because the interface is down.  When the link comes
+    # back UP, we must re-add the catch-all route and NFQUEUE rules so
+    # that AODV can intercept packets again without restarting aodvd.
+    if action == "up":
+        for ns in [link["src"], link["dst"]]:
+            ifaces = _get_node_ifaces(ns)
+            if not ifaces:
+                continue
+            # Re-add catch-all route (delete first to avoid duplicates)
+            first_iface = ifaces[0]
+            run_cmd("ip route del 10.0.0.0/8", netns=ns)
+            run_cmd(f"ip route add 10.0.0.0/8 dev {first_iface} metric 200", netns=ns)
+            # Re-apply NFQUEUE iptables rules (idempotent)
+            _configure_nfqueue(ns)
+            emit_log(f"Restored catch-all route & NFQUEUE on {ns}.", "info", ns)
+
     level = "warn" if action == "down" else "info"
     emit_log(
         f"Link {link['src']} ↔ {link['dst']} set {action.upper()}.",
