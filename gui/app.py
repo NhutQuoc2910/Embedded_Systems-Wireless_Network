@@ -359,24 +359,28 @@ def _start_aodvd(ns: str) -> bool:
 
         # --- Per-namespace rtlog isolation ---
         # Network namespaces share the filesystem, so all aodvd instances
-        # would write to the same /var/log/aodvd.rtlog.  We fix this by:
-        #   1. Creating a per-ns file: /tmp/aodvd-{ns}.rtlog
-        #   2. Using unshare --mount to give aodvd its own mount namespace
-        #   3. Bind-mounting the per-ns file over /var/log/aodvd.rtlog
+        # would write to the same /var/log/aodvd.rtlog.  We fix this by
+        # using a per-ns symlink trick:
+        #   1. Create a per-ns file: /tmp/aodvd-{ns}.rtlog
+        #   2. Atomically swap symlink: /var/log/aodvd.rtlog → per-ns file
+        #   3. Start aodvd — log_init() opens fd bound to per-ns file by inode
+        #   4. Sleep briefly to ensure fd is opened before next symlink swap
+        # This works because _start_aodvd runs sequentially inside aodvd_lock.
         rtlog_path = f"/tmp/aodvd-{ns}.rtlog"
-        # Ensure the per-ns file and target exist
-        for p in [rtlog_path, "/var/log/aodvd.rtlog"]:
-            subprocess.run(["touch", p], capture_output=True)
+        # Create/truncate the per-ns file
+        subprocess.run(["bash", "-c", f"> {rtlog_path}"], capture_output=True)
+        # Atomically swap the symlink (ln -sf is atomic via rename)
+        subprocess.run(
+            ["ln", "-sf", rtlog_path, "/var/log/aodvd.rtlog"],
+            capture_output=True,
+        )
 
-        shell_cmd = (
-            f"ip netns exec {ns} unshare --mount -- bash -c '"
-            f"mount --bind {rtlog_path} /var/log/aodvd.rtlog && "
-            f"exec stdbuf -oL -eL {AODVD_BIN} -D -r 1 -i {iface_arg}'"
+        cmd = shlex.split(
+            f"ip netns exec {ns} stdbuf -oL -eL {AODVD_BIN} -D -r 1 -i {iface_arg}"
         )
         try:
             proc = subprocess.Popen(
-                shell_cmd,
-                shell=True,
+                cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -385,6 +389,11 @@ def _start_aodvd(ns: str) -> bool:
         except Exception as e:
             emit_log("aodvd binary not found — run 'make aodvd' first.", "error", ns)
             return False
+
+        # Wait for aodvd's log_init() to open the rtlog fd (bound by inode).
+        # This ensures the fd is locked to this per-ns file before we
+        # swap the symlink for the next namespace.
+        time.sleep(0.3)
 
         aodvd_procs[ns] = proc
         socketio.start_background_task(target=_stream_aodvd, ns=ns, proc=proc)
