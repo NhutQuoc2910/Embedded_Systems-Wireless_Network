@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  node_a:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: node_a
+    hostname: node_a
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.rp_filter=0
+    networks:
+      net_left:
+        ipv4_address: 10.0.1.10
+    stdin_open: true
+    tty: true
+
+  node_b:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: node_b
+    hostname: node_b
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.rp_filter=0
+    networks:
+      net_left:
+        ipv4_address: 10.0.1.20
+      net_mid:
+        ipv4_address: 10.0.2.20
+    stdin_open: true
+    tty: true
+
+  node_c:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: node_c
+    hostname: node_c
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.rp_filter=0
+    networks:
+      net_mid:
+        ipv4_address: 10.0.2.30
+      net_right:
+        ipv4_address: 10.0.3.30
+    stdin_open: true
+    tty: true
+
+  node_d:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: node_d
+    hostname: node_d
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.rp_filter=0
+    networks:
+      net_right:
+        ipv4_address: 10.0.3.40
+    stdin_open: true
+    tty: true
+
+networks:
+  net_left:
+    ipam:
+      config:
+        - subnet: 10.0.1.0/24
+  net_mid:
+    ipam:
+      config:
+        - subnet: 10.0.2.0/24
+  net_right:
+    ipam:
+      config:
+        - subnet: 10.0.3.0/24
