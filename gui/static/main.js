@@ -179,6 +179,8 @@ function syncStatusPanel(data) {
 
   setStatusEl("status-topology", anyAlive,  "Online",  "Offline");
   setStatusEl("status-aodv",     anyAodvd,  "Running", "Offline");
+  
+  syncNFQueueBtn(data.nfqueue_enabled);
 }
 
 function setStatusEl(id, active, onLabel, offLabel) {
@@ -187,6 +189,18 @@ function setStatusEl(id, active, onLabel, offLabel) {
   el.innerHTML = active
     ? `${onLabel} <span class="status-indicator active"></span>`
     : `${offLabel} <span class="status-indicator"></span>`;
+}
+
+function syncNFQueueBtn(enabled) {
+  const nfqBtn = document.getElementById("btn-nfqueue");
+  if (!nfqBtn) return;
+  if (enabled) {
+    nfqBtn.innerHTML = "⚙ NFQUEUE: <strong>ON</strong>";
+    nfqBtn.className = "btn btn-ghost active";
+  } else {
+    nfqBtn.innerHTML = "⚙ NFQUEUE: OFF";
+    nfqBtn.className = "btn btn-ghost";
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -523,9 +537,9 @@ async function apiToggleLink(linkId) {
   if (!data.ok) logSystem(`Toggle link failed: ${data.error}`, "error");
 }
 
-async function apiEnableNFQueue() {
-  const data = await apiFetch("/api/nfqueue");
-  if (!data.ok) logSystem("NFQUEUE setup failed.", "error");
+async function apiToggleNFQueue() {
+  const data = await apiFetch("/api/nfqueue/toggle");
+  if (!data.ok) logSystem(`NFQUEUE toggle failed: ${data.error}`, "error");
 }
 
 async function apiStartAodv(ns = null) {
@@ -728,7 +742,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   bind("btn-add-node",    apiAddNode);
   bind("btn-add-link",    toggleEdgeMode);
-  bind("btn-nfqueue",     apiEnableNFQueue);
+  bind("btn-nfqueue",     apiToggleNFQueue);
   bind("btn-start-aodv",  () => apiStartAodv());
   bind("btn-stop-aodv",   () => apiStopAodv());
   bind("btn-ping",        apiPing);

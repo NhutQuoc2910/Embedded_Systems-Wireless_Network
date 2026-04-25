@@ -64,6 +64,7 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 topology = {
     "nodes": {},
     "links": [],
+    "nfqueue_enabled": False,
 }
 
 aodvd_procs: Dict[str, subprocess.Popen] = {}
@@ -166,7 +167,7 @@ def _build_topology_event() -> dict:
             "alive": name in live_ns,
             "aodvd": name in aodvd_procs and aodvd_procs[name].poll() is None,
         })
-    return {"nodes": nodes_out, "links": list(topology["links"])}
+    return {"nodes": nodes_out, "links": list(topology["links"]), "nfqueue_enabled": topology.get("nfqueue_enabled", False)}
 
 
 # ---------------------------------------------------------------------------
@@ -446,7 +447,7 @@ def get_topology():
             "aodvd": name in aodvd_procs and aodvd_procs[name].poll() is None,
         })
 
-    return jsonify({"nodes": nodes_out, "links": list(topology["links"])})
+    return jsonify({"nodes": nodes_out, "links": list(topology["links"]), "nfqueue_enabled": topology.get("nfqueue_enabled", False)})
 
 
 # ---------------------------------------------------------------------------
@@ -573,6 +574,10 @@ def add_link():
     topology["nodes"][src]["ips"].append(ip_s)
     topology["nodes"][dst]["ips"].append(ip_d)
 
+    if topology.get("nfqueue_enabled", False):
+        _configure_nfqueue(src)
+        _configure_nfqueue(dst)
+
     socketio.emit("topology_update", _build_topology_event())
     return jsonify({"ok": True, "link_id": link_id, "ip_src": ip_s, "ip_dst": ip_d})
 
@@ -633,8 +638,11 @@ def toggle_link(link_id):
             run_cmd("ip route del 10.0.0.0/8", netns=ns)
             run_cmd(f"ip route add 10.0.0.0/8 dev {first_iface} metric 200", netns=ns)
             # Re-apply NFQUEUE iptables rules (idempotent)
-            _configure_nfqueue(ns)
-            emit_log(f"Restored catch-all route & NFQUEUE on {ns}.", "info", ns)
+            if topology.get("nfqueue_enabled", False):
+                _configure_nfqueue(ns)
+                emit_log(f"Restored catch-all route & NFQUEUE on {ns}.", "info", ns)
+            else:
+                emit_log(f"Restored catch-all route on {ns}.", "info", ns)
 
     level = "warn" if action == "down" else "info"
     emit_log(
@@ -649,14 +657,23 @@ def toggle_link(link_id):
 # REST API — NFQUEUE
 # ---------------------------------------------------------------------------
 
-@app.route("/api/nfqueue", methods=["POST"])
-def enable_nfqueue():
-    """Configure NFQUEUE on all nodes (or one via ?ns=ns-A)."""
-    target = request.args.get("ns")
-    nodes  = [target] if target else list(topology["nodes"].keys())
-    for ns in nodes:
-        _configure_nfqueue(ns)
-    return jsonify({"ok": True})
+@app.route("/api/nfqueue/toggle", methods=["POST"])
+def toggle_nfqueue():
+    """Toggle NFQUEUE globally and apply to all existing nodes."""
+    topology["nfqueue_enabled"] = not topology.get("nfqueue_enabled", False)
+    enabled = topology["nfqueue_enabled"]
+    for ns in topology["nodes"].keys():
+        if enabled:
+            _configure_nfqueue(ns)
+        else:
+            _disable_nfqueue(ns)
+    socketio.emit("topology_update", _build_topology_event())
+    return jsonify({"ok": True, "enabled": enabled})
+
+def _disable_nfqueue(ns: str):
+    run_cmd("iptables -F OUTPUT",  netns=ns)
+    run_cmd("iptables -F FORWARD", netns=ns)
+    emit_log(f"NFQUEUE disabled on {ns}.", "warn", ns)
 
 
 # ---------------------------------------------------------------------------
