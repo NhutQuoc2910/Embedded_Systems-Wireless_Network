@@ -749,6 +749,9 @@ document.addEventListener("DOMContentLoaded", () => {
   bind("btn-refresh-rt",  refreshRoutingTables);
   bind("btn-cleanup",     apiCleanup);
 
+  // Auto-refresh routing tables every 60 seconds
+  setInterval(refreshRoutingTables, 60000);
+
   // Escape key exits edge-draw mode
   document.addEventListener("keydown", e => {
     if (e.key === "Escape" && edgeModeActive) disableEdgeMode();

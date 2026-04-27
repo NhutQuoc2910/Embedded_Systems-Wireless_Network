@@ -377,7 +377,7 @@ def _start_aodvd(ns: str) -> bool:
         )
 
         cmd = shlex.split(
-            f"ip netns exec {ns} stdbuf -oL -eL {AODVD_BIN} -D -r 1 -i {iface_arg}"
+            f"ip netns exec {ns} stdbuf -oL -eL {AODVD_BIN} -D -r 60 -i {iface_arg}"
         )
         try:
             proc = subprocess.Popen(
